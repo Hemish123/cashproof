@@ -1,0 +1,1017 @@
+{% load custom_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CashProof Analysis</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Modern Premium Reset & Styles */
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #f1f5f9;
+            --bg-card: #ffffff;
+            --border-card: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --primary: #2563eb;
+            --primary-glow: rgba(37, 99, 235, 0.15);
+            --success: #16a34a;
+            --success-glow: rgba(22, 163, 74, 0.15);
+            --danger: #dc2626;
+            --danger-glow: rgba(220, 38, 38, 0.15);
+            --warning: #d97706;
+            --warning-glow: rgba(217, 119, 6, 0.1);
+            --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Top Header Styling */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--border-card);
+            padding-bottom: 1.5rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: white;
+            font-size: 1.2rem;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        .brand h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #0f172a, #475569);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand span {
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        /* Alerts and Messages */
+        .messages {
+            margin-bottom: 2rem;
+        }
+
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            animation: slideDown 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .alert-success {
+            background: rgba(22, 163, 74, 0.08);
+            border: 1px solid rgba(22, 163, 74, 0.15);
+            color: #15803d;
+        }
+
+        .alert-error {
+            background: rgba(220, 38, 38, 0.08);
+            border: 1px solid rgba(220, 38, 38, 0.15);
+            color: #b91c1c;
+        }
+
+        .alert-warning {
+            background: rgba(217, 119, 6, 0.08);
+            border: 1px solid rgba(217, 119, 6, 0.15);
+            color: #b45309;
+        }
+
+        .alert-close {
+            background: none;
+            border: none;
+            color: currentColor;
+            cursor: pointer;
+            font-size: 1.2rem;
+            opacity: 0.6;
+        }
+        .alert-close:hover {
+            opacity: 1;
+        }
+
+        /* Dashboard Overview Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            border-radius: 4px 0 0 4px;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .metric-card.deposits::before { background: var(--success); }
+        .metric-card.deposits:hover { box-shadow: 0 12px 20px -8px var(--success-glow); }
+
+        .metric-card.payments::before { background: var(--danger); }
+        .metric-card.payments:hover { box-shadow: 0 12px 20px -8px var(--danger-glow); }
+
+        .metric-card.interbank::before { background: var(--warning); }
+        .metric-card.interbank:hover { box-shadow: 0 12px 20px -8px var(--warning-glow); }
+
+        .metric-card.net::before { background: var(--primary); }
+        .metric-card.net:hover { box-shadow: 0 12px 20px -8px var(--primary-glow); }
+
+        .metric-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .metric-card.deposits .metric-value { color: #16a34a; }
+        .metric-card.payments .metric-value { color: #dc2626; }
+        .metric-card.net .metric-value { color: #2563eb; }
+
+        .metric-details {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 0.75rem;
+        }
+
+        .metric-subitem {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .metric-subitem span:last-child {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Two-Column Working Section Layout */
+        .workspace-layout {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 2rem;
+            align-items: start;
+            margin-bottom: 2.5rem;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Card panels */
+        .panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* File Upload Form UI */
+        .upload-area {
+            border: 2px dashed rgba(0, 0, 0, 0.12);
+            border-radius: 12px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: rgba(0, 0, 0, 0.005);
+            position: relative;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.03);
+        }
+
+        .upload-icon {
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
+            color: var(--primary);
+        }
+
+        .upload-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .upload-hint {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Hide default file input but make clickable */
+        .file-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 0.85rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(59, 130, 246, 0.35);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+            text-decoration: none;
+            margin-top: 1rem;
+        }
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35);
+        }
+
+        .form-group {
+            margin-top: 1.25rem;
+        }
+
+        .selected-file-name {
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--success);
+            font-weight: 500;
+            text-align: center;
+            display: none;
+        }
+
+        /* Upload Registry History */
+        .upload-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        .upload-item {
+            background: rgba(0, 0, 0, 0.015);
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            padding: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: var(--transition);
+        }
+
+        .upload-item:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        .upload-info {
+            max-width: 80%;
+        }
+
+        .upload-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .upload-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 0.15rem;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .status-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 0.1rem 0.35rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .status-badge.completed { background: #dcfce7; color: #15803d; }
+        .status-badge.processing { background: #dbeafe; color: #1d4ed8; }
+        .status-badge.failed { background: #fee2e2; color: #b91c1c; }
+
+        .btn-delete {
+            background: none;
+            border: none;
+            color: var(--danger);
+            opacity: 0.6;
+            cursor: pointer;
+            padding: 0.25rem;
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+        .btn-delete:hover {
+            opacity: 1;
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Right Dashboard Panel - Accounts Grid */
+        .accounts-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+        }
+
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .account-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: var(--transition);
+        }
+
+        .account-card:hover {
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .account-header {
+            border-bottom: 1px solid var(--border-card);
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .account-bank {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .account-number {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 0.15rem;
+        }
+
+        .account-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .account-stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.03);
+            padding-bottom: 0.35rem;
+        }
+
+        .account-stat-row.net {
+            border-bottom: none;
+            padding-bottom: 0;
+            padding-top: 0.5rem;
+            font-weight: 700;
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .stat-value.deposit { color: #34d399; }
+        .stat-value.payment { color: #f87171; }
+
+        /* Bottom Section: Transactions Ledger */
+        .ledger-panel {
+            margin-top: 2.5rem;
+        }
+
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+        }
+
+        .search-bar {
+            background: #ffffff;
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            width: 300px;
+            transition: var(--transition);
+        }
+
+        .search-bar:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .table-wrapper {
+            max-height: 500px;
+            overflow-y: auto;
+            border-radius: 12px;
+            border: 1px solid var(--border-card);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            background: var(--bg-secondary);
+            z-index: 10;
+        }
+
+        th {
+            padding: 0.85rem 1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-card);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            vertical-align: middle;
+        }
+
+        tr {
+            transition: var(--transition);
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .td-bank {
+            font-weight: 600;
+        }
+
+        .td-acc {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .td-desc {
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        .badge-interbank {
+            background: rgba(245, 158, 11, 0.12);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.05);
+        }
+
+        .amount-val {
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        
+        .amount-val.positive { color: #16a34a; }
+        .amount-val.negative { color: #dc2626; }
+
+        /* Animations */
+        @keyframes slideDown {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            opacity: 0.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        
+        <!-- Header -->
+        <header>
+            <div class="brand">
+                <div class="brand-logo">CP</div>
+                <div>
+                    <h1>CashProof Analysis</h1>
+                </div>
+                <span>Standardizer Engine</span>
+            </div>
+            <div>
+                {% if accounts %}
+                    <a href="{% url 'download_report' %}" class="btn btn-primary" style="width: auto;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Download Unified Excel Report
+                    </a>
+                {% endif %}
+            </div>
+        </header>
+
+        <!-- System Alerts -->
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}">
+                        <span>{{ message }}</span>
+                        <button class="alert-close" onclick="this.parentElement.remove();">&times;</button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <!-- Global Cash Flow Overview Banner -->
+        <div class="metrics-grid">
+            <!-- 1. Total Deposits Card -->
+            <div class="metric-card deposits">
+                <div>
+                    <div class="metric-label">Total Cash Inflow</div>
+                    <div class="metric-value">${{ global_total_deposits|floatformat:2 }}</div>
+                </div>
+                <div class="metric-details">
+                    <div class="metric-subitem">
+                        <span>Self Transfers (In)</span>
+                        <span>${{ global_total_interbank_deposits|floatformat:2 }}</span>
+                    </div>
+                    <div class="metric-subitem">
+                        <span>Net External Income</span>
+                        <span class="stat-value deposit">${{ global_net_deposits|floatformat:2 }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Total Payments Card -->
+            <div class="metric-card payments">
+                <div>
+                    <div class="metric-label">Total Cash Outflow</div>
+                    <div class="metric-value">${{ global_total_payments|floatformat:2 }}</div>
+                </div>
+                <div class="metric-details">
+                    <div class="metric-subitem">
+                        <span>Self Transfers (Out)</span>
+                        <span>${{ global_total_interbank_payments|floatformat:2 }}</span>
+                    </div>
+                    <div class="metric-subitem">
+                        <span>Net External Expenses</span>
+                        <span class="stat-value payment">${{ global_net_payments|floatformat:2 }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Interbank Self-Transfers Card -->
+            <div class="metric-card interbank">
+                <div>
+                    <div class="metric-label">Total Self Transfers</div>
+                    <div class="metric-value" style="color: #fbbf24;">${{ global_total_interbank_deposits|floatformat:2 }}</div>
+                </div>
+                <div class="metric-details">
+                    <div class="metric-subitem">
+                        <span>Matched Pairs</span>
+                        <span>{{ accounts.count|default:0 }} accounts evaluated</span>
+                    </div>
+                    <div class="metric-subitem">
+                        <span>Impact on Income</span>
+                        <span style="color: #fbbf24;">- ${{ global_total_interbank_deposits|floatformat:2 }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. Combined Net Cashflow Card -->
+            <div class="metric-card net">
+                <div>
+                    <div class="metric-label">Net Operating Flow</div>
+                    <div class="metric-value" style="color: #60a5fa;">
+                        {% if global_net_cash_flow >= 0 %}
+                            +${{ global_net_cash_flow|floatformat:2 }}
+                        {% else %}
+                            -${{ global_net_cash_flow|custom_abs|floatformat:2 }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="metric-details">
+                    <div class="metric-subitem">
+                        <span>Calculation</span>
+                        <span>Net Inflow - Net Outflow</span>
+                    </div>
+                    <div class="metric-subitem">
+                        <span>Status</span>
+                        {% if global_net_cash_flow >= 0 %}
+                            <span style="color: #34d399; font-weight: 700;">Positive Cashflow</span>
+                        {% else %}
+                            <span style="color: #f87171; font-weight: 700;">Negative Cashflow</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workspace Layout -->
+        <div class="workspace-layout">
+            
+            <!-- Left Side Control Panel (Upload File + Active Files List) -->
+            <div class="sidebar">
+                <!-- Ingestion Upload Card -->
+                <div class="panel">
+                    <h2 class="panel-title">Ingest Statement</h2>
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="upload-area" onclick="document.getElementById('file-upload-input').click();">
+                            <div class="upload-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            </div>
+                            <div class="upload-text">Select Bank Statement</div>
+                            <div class="upload-hint">Drag & drop or browse</div>
+                            <div class="upload-hint" style="margin-top: 0.25rem; font-size: 0.7rem; color: var(--primary);">Supports PDF, CSV, Excel</div>
+                            {{ form.file }}
+                        </div>
+                        <div class="selected-file-name" id="selected-file-text">No file chosen</div>
+                        
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-primary">
+                                Parse & Standardize
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- History Upload Registry Card -->
+                <div class="panel">
+                    <h2 class="panel-title">Uploaded Files ({{ uploads.count }})</h2>
+                    <div class="upload-list">
+                        {% for upload in uploads %}
+                            <div class="upload-item">
+                                <div class="upload-info">
+                                    <div class="upload-name" title="{{ upload.filename }}">{{ upload.filename }}</div>
+                                    <div class="upload-meta">
+                                        <span>{{ upload.uploaded_at|date:"M d, H:i" }}</span>
+                                        <span class="status-badge {{ upload.status|lower }}">{{ upload.status }}</span>
+                                    </div>
+                                </div>
+                                <a href="{% url 'delete_upload' upload.id %}" class="btn-delete" title="Delete & Reprocess">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                </a>
+                            </div>
+                        {% empty %}
+                            <div class="empty-state" style="padding: 1.5rem 0;">
+                                <div class="empty-state-icon">📄</div>
+                                <div style="font-size: 0.8rem;">No files uploaded yet</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side Main Dashboard: Bank Accounts List -->
+            <div class="panel" style="min-height: 520px;">
+                <div class="accounts-title-row">
+                    <h2 class="panel-title" style="margin-bottom: 0;">Standardized Accounts Ledger ({{ accounts.count }})</h2>
+                </div>
+                
+                <div class="accounts-grid">
+                    {% for acc in accounts %}
+                        <div class="account-card">
+                            <div class="account-header">
+                                <div class="account-bank">{{ acc.bank_name }}</div>
+                                <div class="account-number">A/C: {{ acc.account_number }}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                                    Period: {{ acc.start_date|date:"Y-m-d" }} to {{ acc.end_date|date:"Y-m-d" }}
+                                </div>
+                            </div>
+                            <div class="account-stats">
+                                <div class="account-stat-row">
+                                    <span>Total Deposits</span>
+                                    <span class="stat-value">${{ acc.total_deposits|floatformat:2 }}</span>
+                                </div>
+                                <div class="account-stat-row">
+                                    <span>Total Payments</span>
+                                    <span class="stat-value">${{ acc.total_payments|floatformat:2 }}</span>
+                                </div>
+                                <div class="account-stat-row">
+                                    <span>Interbank Deposits</span>
+                                    <span>${{ acc.total_interbank_deposits|floatformat:2 }}</span>
+                                </div>
+                                <div class="account-stat-row">
+                                    <span>Interbank Payments</span>
+                                    <span>${{ acc.total_interbank_payments|floatformat:2 }}</span>
+                                </div>
+                                <div class="account-stat-row net">
+                                    <span>Net Inflow (Income)</span>
+                                    <span class="stat-value deposit">${{ acc.net_deposits|floatformat:2 }}</span>
+                                </div>
+                                <div class="account-stat-row net">
+                                    <span>Net Outflow (Expense)</span>
+                                    <span class="stat-value payment">${{ acc.net_payments|floatformat:2 }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {% empty %}
+                        <div class="empty-state" style="grid-column: 1 / -1; width: 100%;">
+                            <div class="empty-state-icon">🏦</div>
+                            <h3>No Bank Accounts Found</h3>
+                            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Upload bank statements using the drag & drop pane to extract account entities.</p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Standardized Transactions Ledger (Granular Supporting Data) -->
+        {% if transactions %}
+            <div class="panel ledger-panel">
+                <div class="table-controls">
+                    <h2 class="panel-title" style="margin-bottom: 0;">Supporting Transaction Logs</h2>
+                    <input type="text" class="search-bar" id="tableSearch" placeholder="Search transactions..." onkeyup="searchTable()">
+                </div>
+                
+                <div class="table-wrapper">
+                    <table id="transactionsTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Bank Details</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Self Transfer?</th>
+                                <th style="text-align: right;">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tx in transactions %}
+                                <tr>
+                                    <td style="white-space: nowrap;">{{ tx.date|date:"Y-m-d" }}</td>
+                                    <td>
+                                        <div class="td-bank">{{ tx.account.bank_name }}</div>
+                                        <div class="td-acc">A/C: {{ tx.account.account_number }}</div>
+                                    </td>
+                                    <td class="td-desc" title="{{ tx.description }}">{{ tx.description }}</td>
+                                    <td>
+                                        <span class="badge" style="background: rgba(0,0,0,0.03); color: var(--text-secondary); border: 1px solid var(--border-card)">
+                                            {{ tx.category }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if tx.is_interbank %}
+                                            <span class="badge badge-interbank">Self Transfer</span>
+                                        {% else %}
+                                            <span style="color: var(--text-secondary); font-size: 0.8rem; font-weight: 500;">No</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="text-align: right;">
+                                        {% if tx.amount >= 0 %}
+                                            <span class="amount-val positive">+${{ tx.amount|floatformat:2 }}</span>
+                                        {% else %}
+                                            <span class="amount-val negative">-${{ tx.amount|custom_abs|floatformat:2 }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Javascript for Dynamic Interactions -->
+    <script>
+        // Display selected file name in ingestion panel
+        document.getElementById('file-upload-input').addEventListener('change', function() {
+            var fileText = document.getElementById('selected-file-text');
+            if (this.files && this.files.length > 0) {
+                if (this.files.length === 1) {
+                    fileText.innerText = "Selected: " + this.files[0].name;
+                } else {
+                    fileText.innerText = "Selected: " + this.files.length + " files";
+                }
+                fileText.style.display = 'block';
+            } else {
+                fileText.innerText = "No file chosen";
+                fileText.style.display = 'none';
+            }
+        });
+
+        // Simple search functionality for the ledger table
+        function searchTable() {
+            var input, filter, table, tr, td, i, j, txtValue, match;
+            input = document.getElementById("tableSearch");
+            filter = input.value.toUpperCase();
+            table = document.getElementById("transactionsTable");
+            tr = table.getElementsByTagName("tr");
+
+            for (i = 1; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td");
+                match = false;
+                for (j = 0; j < td.length; j++) {
+                    if (td[j]) {
+                        txtValue = td[j].textContent || td[j].innerText;
+                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                            match = true;
+                            break;
+                        }
+                    }
+                }
+                if (match) {
+                    tr[i].style.display = "";
+                } else {
+                    tr[i].style.display = "none";
+                }
+            }
+        }
+    </script>
+</body>
+</html>

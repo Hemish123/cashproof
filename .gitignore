@@ -1,0 +1,29 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.dll
+
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+scratch/
+
+# Environment / Secret keys
+.env
+.vscode/
+.idea/
+
+# Reports generated locally
+*.xlsx
