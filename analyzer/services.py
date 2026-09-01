@@ -43,9 +43,10 @@ def detect_interbank_transactions():
     for tx in all_txs:
         if pattern.search(tx.description):
             tx.is_interbank = True
+            tx.category = 'Interbank Self-Transfer'
 
     # Save initial keyword-flagged transactions
-    Transaction.objects.bulk_update([t for t in all_txs if t.is_interbank], ['is_interbank'])
+    Transaction.objects.bulk_update([t for t in all_txs if t.is_interbank], ['is_interbank', 'category'])
 
     # 3. Cross-Account Amount & Date Pairing Algorithm
     # Refetch fresh transactions to proceed with pairing
@@ -78,14 +79,16 @@ def detect_interbank_transactions():
             
             # Flag both as interbank transfers
             outflow.is_interbank = True
+            outflow.category = 'Interbank Self-Transfer'
             best_match.is_interbank = True
+            best_match.category = 'Interbank Self-Transfer'
             
             updated_txs.append(outflow)
             updated_txs.append(best_match)
 
     if updated_txs:
         # Bulk save paired transactions in the database
-        Transaction.objects.bulk_update(updated_txs, ['is_interbank'])
+        Transaction.objects.bulk_update(updated_txs, ['is_interbank', 'category'])
 
     # 4. Recalculate Aggregates for all accounts
     from .parsers.manager import update_account_aggregates

@@ -140,7 +140,7 @@ class PDFStatementParser(BaseParser):
                             'description': row_desc,
                             'amount': amount,
                             'balance': balance,
-                            'category': 'Uncategorized'
+                            'category': self.derive_category(row_desc, None, amount)
                         }
                         transactions.append(current_tx)
         
@@ -203,7 +203,7 @@ class PDFStatementParser(BaseParser):
                                         'description': desc_text,
                                         'amount': amount,
                                         'balance': balance,
-                                        'category': 'Uncategorized'
+                                        'category': self.derive_category(desc_text, None, amount)
                                     }
                                     transactions.append(current_tx)
                                 else:
@@ -212,7 +212,7 @@ class PDFStatementParser(BaseParser):
                                         'description': remainder,
                                         'amount': Decimal('0.00'),
                                         'balance': None,
-                                        'category': 'Uncategorized'
+                                        'category': self.derive_category(remainder, None, Decimal('0.00'))
                                     }
                                     transactions.append(current_tx)
                         elif current_tx:
@@ -562,12 +562,15 @@ class PDFStatementParser(BaseParser):
             except Exception:
                 date_val = datetime.date.today()
 
+            desc_text = tx.get("description", "Unknown Transaction")
+            amt_val = Decimal(str(tx.get("amount", "0.00")))
+            cat_raw = tx.get("category")
             transactions.append({
                 'date': date_val,
-                'description': tx.get("description", "Unknown Transaction"),
-                'amount': Decimal(str(tx.get("amount", "0.00"))),
+                'description': desc_text,
+                'amount': amt_val,
                 'balance': Decimal(str(tx["balance"])) if tx.get("balance") is not None else None,
-                'category': 'Uncategorized'
+                'category': self.derive_category(desc_text, cat_raw, amt_val)
             })
 
         # Calculate start and end date

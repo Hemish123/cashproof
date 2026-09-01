@@ -30,6 +30,43 @@ class BaseParser:
         """
         raise NotImplementedError("Subclasses must implement parse()")
 
+    def derive_category(self, description, category_raw=None, amount=None):
+        if category_raw and str(category_raw).strip():
+            raw_str = str(category_raw).strip()
+            if raw_str.lower() not in ('uncategorized', 'nan', 'none', '-', ''):
+                return raw_str.title()
+
+        desc = (str(description) if description else "").upper()
+
+        if re.search(r'\b(CHECK|CHK)\b', desc):
+            return 'Check'
+        if re.search(r'\b(WIRE|FEDWIRE)\b', desc):
+            return 'Wire Transfer'
+        if re.search(r'\b(ACH|DIRDEP|DIRECT\s*DEP|PAYROLL)\b', desc):
+            return 'ACH / Direct Deposit'
+        if re.search(r'\b(TRANSFER|XFER|CBUSOL\s*TRANSFER|ONLINE\s*TRANSFER|INTERNAL)\b', desc):
+            return 'Self Transfer'
+        if re.search(r'\b(FEE|SERVICE\s*CHG|CHARGE|OVERDRAFT|MAINTENANCE)\b', desc):
+            return 'Bank Fee'
+        if re.search(r'\b(INTEREST|INT\s*PAID)\b', desc):
+            return 'Interest'
+        if re.search(r'\b(TAX|TAXES|IRS|STATE\s*TAX|CORP\s*TAX)\b', desc):
+            return 'Taxes'
+        if re.search(r'\b(POS|DEBIT\s*CARD|CARD\s*PURCHASE|PURCHASE)\b', desc):
+            return 'Card Transaction'
+
+        if amount is not None:
+            try:
+                amt = Decimal(str(amount))
+                if amt > 0:
+                    return 'Deposit'
+                elif amt < 0:
+                    return 'Payment'
+            except Exception:
+                pass
+
+        return 'Uncategorized'
+
     def clean_amount(self, value):
         if value is None or (isinstance(value, float) and import_math_is_nan_helper(value)):
             return Decimal('0.00')

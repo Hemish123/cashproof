@@ -75,12 +75,21 @@ class CSVExcelParser(BaseParser):
                 if pd.notna(balance_val):
                     balance = self.clean_amount(balance_val)
 
+            # Get category if column present in file or derive from description
+            raw_cat = None
+            if mappings.get('cat_col_idx') is not None:
+                cat_val = row.iloc[mappings['cat_col_idx']]
+                if pd.notna(cat_val):
+                    raw_cat = str(cat_val).strip()
+
+            category = self.derive_category(description, raw_cat, amount)
+
             transactions.append({
                 'date': parsed_date,
                 'description': description,
                 'amount': amount,
                 'balance': balance,
-                'category': 'Uncategorized'
+                'category': category
             })
 
         # Calculate statement start and end date
@@ -138,6 +147,7 @@ class CSVExcelParser(BaseParser):
         debit_syn = {'debit', 'withdrawals', 'payments', 'amount out', 'outflow', 'charge', 'withdrawal', 'paid out'}
         credit_syn = {'credit', 'deposits', 'receipts', 'amount in', 'inflow', 'deposit', 'paid in'}
         bal_syn = {'balance', 'running balance', 'ledger balance', 'outstanding balance'}
+        cat_syn = {'category', 'cat', 'type', 'transaction type', 'tx type', 'classification', 'channel', 'code', 'category name'}
 
         best_row_idx = None
         best_score = 0
@@ -153,7 +163,8 @@ class CSVExcelParser(BaseParser):
                 'amount_col_idx': None,
                 'debit_col_idx': None,
                 'credit_col_idx': None,
-                'bal_col_idx': None
+                'bal_col_idx': None,
+                'cat_col_idx': None
             }
             
             score = 0
@@ -175,6 +186,9 @@ class CSVExcelParser(BaseParser):
                     score += 1
                 elif self.matches_header_type(cell, bal_syn) and mappings['bal_col_idx'] is None:
                     mappings['bal_col_idx'] = col_idx
+                    score += 1
+                elif self.matches_header_type(cell, cat_syn) and mappings['cat_col_idx'] is None:
+                    mappings['cat_col_idx'] = col_idx
                     score += 1
 
             # Valid header must have at least a date, description, and some amount indicators

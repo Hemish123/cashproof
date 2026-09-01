@@ -674,14 +674,72 @@
             color: var(--text-secondary);
         }
 
-        .empty-state-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            opacity: 0.4;
+        /* Full-Screen Loading Overlay */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            color: #ffffff;
+            transition: opacity 0.3s ease;
+        }
+
+        .loader-spinner {
+            width: 64px;
+            height: 64px;
+            border: 5px solid rgba(255, 255, 255, 0.15);
+            border-top: 5px solid #2563eb;
+            border-right: 5px solid #16a34a;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 0 30px rgba(37, 99, 235, 0.4);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loader-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+            color: #f8fafc;
+        }
+
+        .loader-subtitle {
+            font-size: 0.92rem;
+            color: #94a3b8;
+            text-align: center;
+            max-width: 400px;
+            animation: pulseText 1.8s ease-in-out infinite;
+        }
+
+        @keyframes pulseText {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
         }
     </style>
 </head>
 <body>
+    <!-- Full-Screen Processing Loader Overlay -->
+    <div id="loading-overlay">
+        <div class="loader-spinner"></div>
+        <div class="loader-title" id="loader-title">Analyzing CashProof Statements</div>
+        <div class="loader-subtitle" id="loader-subtitle">Parsing transactions, standardizing data, and generating cashflow metrics...</div>
+    </div>
+
     <div class="container">
         
         <!-- Header -->
@@ -808,7 +866,7 @@
                 <!-- Ingestion Upload Card -->
                 <div class="panel">
                     <h2 class="panel-title">Ingest Statement</h2>
-                    <form method="POST" enctype="multipart/form-data">
+                    <form method="POST" enctype="multipart/form-data" id="upload-form" onsubmit="triggerUploadLoader()">
                         {% csrf_token %}
                         <div class="upload-area" onclick="document.getElementById('file-upload-input').click();">
                             <div class="upload-icon">
@@ -842,7 +900,7 @@
                                         <span class="status-badge {{ upload.status|lower }}">{{ upload.status }}</span>
                                     </div>
                                 </div>
-                                <a href="{% url 'delete_upload' upload.id %}" class="btn-delete" title="Delete & Reprocess">
+                                <a href="{% url 'delete_upload' upload.id %}" class="btn-delete" title="Delete & Reprocess" onclick="triggerDeleteLoader()">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                                 </a>
                             </div>
@@ -984,6 +1042,37 @@
                 fileText.style.display = 'none';
             }
         });
+
+        // Function to show full-screen loader on form submission
+        function triggerUploadLoader() {
+            var fileInput = document.getElementById('file-upload-input');
+            if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                var overlay = document.getElementById('loading-overlay');
+                var title = document.getElementById('loader-title');
+                var subtitle = document.getElementById('loader-subtitle');
+                if (overlay) {
+                    if (fileInput.files.length === 1) {
+                        title.innerText = "Analyzing " + fileInput.files[0].name;
+                    } else {
+                        title.innerText = "Analyzing " + fileInput.files.length + " Statements";
+                    }
+                    subtitle.innerText = "Extracting transactions, standardizing data, and calculating net cashflow metrics...";
+                    overlay.style.display = 'flex';
+                }
+            }
+        }
+
+        // Function to show loader when deleting an item
+        function triggerDeleteLoader() {
+            var overlay = document.getElementById('loading-overlay');
+            var title = document.getElementById('loader-title');
+            var subtitle = document.getElementById('loader-subtitle');
+            if (overlay) {
+                title.innerText = "Reprocessing Account Data";
+                subtitle.innerText = "Updating cashflow metrics and recalculating interbank transfers...";
+                overlay.style.display = 'flex';
+            }
+        }
 
         // Simple search functionality for the ledger table
         function searchTable() {
