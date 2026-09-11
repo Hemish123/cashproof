@@ -35,6 +35,9 @@ def detect_interbank_transactions():
         r'\bcredit\s+card\s+payment\b',
         r'\bpayment\s+to\s+credit\s+card\b',
         r'\bautopay\s+credit\s+card\b',
+        r'\btransfer\b',
+        r'\bxfer\b',
+        r'\bonline\s+transfer\b',
     ]
     pattern = re.compile('|'.join(keywords), re.IGNORECASE)
 
