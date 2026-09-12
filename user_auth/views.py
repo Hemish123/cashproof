@@ -10,7 +10,7 @@ from .forms import SignupForm, LoginForm, BankAccountForm
 
 def signup_view(request):
     if request.user.is_authenticated:
-        return redirect('bank_accounts')
+        return redirect('bank_accounts') 
 
     form = SignupForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
