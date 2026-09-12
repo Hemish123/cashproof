@@ -3,7 +3,6 @@ from django.contrib.auth.models import User
 
 
 class UserProfile(models.Model):
-    """Extended profile linked to Django's built-in User."""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     full_name = models.CharField(max_length=255)
 
