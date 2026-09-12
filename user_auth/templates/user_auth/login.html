@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — CashProof</title>
+    <meta name="description" content="Sign in to your CashProof account to analyze bank statements.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ── Exact same design tokens as dashboard.html ── */
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #f1f5f9;
+            --bg-card: #ffffff;
+            --border-card: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --primary: #2563eb;
+            --primary-glow: rgba(37, 99, 235, 0.15);
+            --success: #16a34a;
+            --danger: #dc2626;
+            --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -4px rgba(0,0,0,0.05);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Card wrapper ── */
+        .auth-wrapper {
+            width: 100%;
+            max-width: 440px;
+            animation: fadeIn 0.35s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Brand header — identical to dashboard .brand ── */
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+            justify-content: center;
+        }
+        .brand-logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; color: white; font-size: 1.2rem;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+        .brand h1 {
+            font-size: 1.5rem; font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #0f172a, #475569);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .brand-badge {
+            color: var(--primary);
+            font-size: 0.85rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.1em;
+            border: 1px solid rgba(59,130,246,0.3);
+            padding: 0.15rem 0.5rem; border-radius: 12px;
+            background: rgba(59,130,246,0.05);
+        }
+
+        /* ── Panel — identical to dashboard .panel ── */
+        .panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 2rem 2rem;
+            box-shadow: var(--shadow-sm);
+        }
+        .panel-title {
+            font-size: 1.1rem; font-weight: 700;
+            margin-bottom: 0.3rem;
+            color: var(--text-primary);
+        }
+        .panel-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.75rem;
+        }
+
+        /* ── Alerts — same as dashboard ── */
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 500; font-size: 0.95rem;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 0.75rem;
+            animation: slideDown 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        .alert-success { background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.15); color: #15803d; }
+        .alert-error   { background: rgba(220,38,38,0.08);  border: 1px solid rgba(220,38,38,0.15);  color: #b91c1c; }
+        .alert-info    { background: rgba(37,99,235,0.08);  border: 1px solid rgba(37,99,235,0.15);  color: #1d4ed8; }
+        .alert-close {
+            background: none; border: none; color: currentColor;
+            cursor: pointer; font-size: 1.2rem; opacity: 0.6;
+        }
+        .alert-close:hover { opacity: 1; }
+
+        /* ── Form fields ── */
+        .form-group { margin-bottom: 1.1rem; }
+        .form-label {
+            display: block;
+            font-size: 0.8rem; font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            margin-bottom: 0.4rem;
+        }
+        .form-control {
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            padding: 0.65rem 0.9rem;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            transition: var(--transition);
+            outline: none;
+        }
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+        .form-control::placeholder { color: #94a3b8; }
+
+        .field-error {
+            font-size: 0.78rem;
+            color: var(--danger);
+            margin-top: 0.3rem;
+            display: flex; align-items: center; gap: 0.25rem;
+        }
+        .field-error::before { content: "⚠"; font-size: 0.7rem; }
+
+        /* ── Buttons — identical to dashboard .btn .btn-primary ── */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 100%;
+            padding: 0.85rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 600; font-size: 0.95rem;
+            cursor: pointer; transition: var(--transition);
+            border: none; gap: 0.5rem;
+            font-family: 'Inter', sans-serif;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(59,130,246,0.35);
+        }
+        .btn-primary:active { transform: translateY(0); }
+
+        /* ── Footer link ── */
+        .auth-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+        .auth-footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .auth-footer a:hover { text-decoration: underline; }
+
+        @keyframes slideDown {
+            from { transform: translateY(-10px); opacity: 0; }
+            to   { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-wrapper">
+
+        <!-- Brand — matches dashboard header exactly -->
+        <div class="brand">
+            <div class="brand-logo">CP</div>
+            <h1>CashProof</h1>
+            <span class="brand-badge">Analysis</span>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">Sign in to your account</div>
+            <p class="panel-subtitle">Enter your credentials to access the dashboard.</p>
+
+            <!-- Messages -->
+            {% if messages %}
+            <div class="messages" style="margin-bottom:1.25rem;">
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }}">
+                    <span>{{ message }}</span>
+                    <button class="alert-close" onclick="this.parentElement.remove();">&times;</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Non-field errors -->
+            {% if form.non_field_errors %}
+            <div class="alert alert-error" style="margin-bottom:1.25rem;">
+                <span>{% for e in form.non_field_errors %}{{ e }}{% endfor %}</span>
+            </div>
+            {% endif %}
+
+            <form method="POST" id="login-form" novalidate>
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label class="form-label" for="id_login_username">Username</label>
+                    <input type="text" class="form-control" id="id_login_username" name="username"
+                        value="{{ form.username.value|default:'' }}"
+                        placeholder="Enter your username" autocomplete="username">
+                    {% for e in form.username.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                </div>
+
+                <div class="form-group" style="margin-bottom:1.5rem;">
+                    <label class="form-label" for="id_login_password">Password</label>
+                    <input type="password" class="form-control" id="id_login_password" name="password"
+                        placeholder="Enter your password" autocomplete="current-password">
+                    {% for e in form.password.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="login-btn">Sign In</button>
+            </form>
+        </div>
+
+        <p class="auth-footer">
+            Don't have an account? <a href="{% url 'signup' %}">Create one</a>
+        </p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Bank Accounts — CashProof</title>
+    <meta name="description" content="Manage your linked bank accounts on CashProof.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ── Same tokens as dashboard.html ── */
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #f1f5f9;
+            --bg-card: #ffffff;
+            --border-card: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --primary: #2563eb;
+            --primary-glow: rgba(56, 88, 157, 0.15);
+            --success: #16a34a;
+            --success-glow: rgba(22, 163, 74, 0.15);
+            --danger: #dc2626;
+            --danger-glow: rgba(220, 38, 38, 0.15);
+            --warning: #d97706;
+            --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -4px rgba(0,0,0,0.05);
+            --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ── Custom Scrollbars — same as dashboard ── */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        /* ── Header — exactly matching dashboard header ── */
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--border-card);
+            padding-bottom: 1.5rem;
+        }
+        .brand { display: flex; align-items: center; gap: 0.75rem; }
+        .brand-logo {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; color: white; font-size: 1.2rem;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+        .brand h1 {
+            font-size: 1.5rem; font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #0f172a, #475569);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .brand-badge {
+            color: var(--primary); font-size: 0.85rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.1em;
+            border: 1px solid rgba(59,130,246,0.3); padding: 0.15rem 0.5rem;
+            border-radius: 12px; background: rgba(59,130,246,0.05);
+        }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .user-pill {
+            display: flex; align-items: center; gap: 0.5rem;
+            font-size: 0.875rem; font-weight: 500; color: var(--text-secondary);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-card);
+            border-radius: 20px; padding: 0.35rem 0.75rem;
+        }
+        .user-avatar {
+            width: 22px; height: 22px;
+            background: linear-gradient(135deg, var(--primary), var(--success));
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; color: white;
+        }
+
+        /* ── Alerts ── */
+        .alert {
+            padding: 1rem 1.25rem; border-radius: 10px;
+            font-weight: 500; font-size: 0.95rem;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 0.75rem;
+            animation: slideDown 0.3s ease; backdrop-filter: blur(10px);
+        }
+        .alert-success { background: rgba(22,163,74,0.08);  border: 1px solid rgba(22,163,74,0.15);  color: #15803d; }
+        .alert-error   { background: rgba(220,38,38,0.08);  border: 1px solid rgba(220,38,38,0.15);  color: #b91c1c; }
+        .alert-info    { background: rgba(37,99,235,0.08);  border: 1px solid rgba(37,99,235,0.15);  color: #1d4ed8; }
+        .alert-close {
+            background: none; border: none; color: currentColor;
+            cursor: pointer; font-size: 1.2rem; opacity: 0.6;
+        }
+        .alert-close:hover { opacity: 1; }
+
+        /* ── Page title area ── */
+        .page-header { margin-bottom: 2rem; }
+        .page-title {
+            font-size: 1.6rem; font-weight: 700;
+            letter-spacing: -0.025em; color: var(--text-primary);
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        .count-badge {
+            font-size: 0.8rem; font-weight: 700;
+            background: rgba(37,99,235,0.08);
+            color: var(--primary);
+            border: 1px solid rgba(37,99,235,0.2);
+            border-radius: 20px; padding: 0.15rem 0.6rem;
+        }
+        .page-subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.3rem; }
+
+        /* ── Workspace layout — mirrors dashboard .workspace-layout ── */
+        .workspace-layout {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+        @media (max-width: 768px) { .workspace-layout { grid-template-columns: 1fr; } }
+
+        /* ── Panel — same as dashboard .panel ── */
+        .panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+        }
+        .panel-title {
+            font-size: 1.1rem; font-weight: 700;
+            margin-bottom: 1.25rem;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        /* ── Add Account Form ── */
+        .form-group { margin-bottom: 1rem; }
+        .form-label {
+            display: block; font-size: 0.8rem; font-weight: 600;
+            color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;
+            margin-bottom: 0.4rem;
+        }
+        .form-control {
+            width: 100%; background: #ffffff;
+            border: 1px solid var(--border-card); border-radius: 8px;
+            padding: 0.65rem 0.9rem;
+            color: var(--text-primary); font-family: 'Inter', sans-serif;
+            font-size: 0.9rem; transition: var(--transition); outline: none;
+        }
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+        .form-control::placeholder { color: #94a3b8; }
+
+        .field-error {
+            font-size: 0.78rem; color: var(--danger);
+            margin-top: 0.3rem; display: flex; align-items: center; gap: 0.25rem;
+        }
+        .field-error::before { content: "⚠"; font-size: 0.7rem; }
+
+        /* ── Buttons — same as dashboard ── */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 100%; padding: 0.85rem 1.25rem; border-radius: 10px;
+            font-weight: 600; font-size: 0.95rem;
+            cursor: pointer; transition: var(--transition); border: none; gap: 0.5rem;
+            font-family: 'Inter', sans-serif;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%);
+            color: white; box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+            margin-top: 0.5rem;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(59,130,246,0.35);
+        }
+        .btn-sm-danger {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            background: none; border: none; color: var(--danger);
+            opacity: 0.65; cursor: pointer; padding: 0.25rem 0.5rem;
+            border-radius: 6px; font-size: 0.8rem; font-family: 'Inter', sans-serif;
+            transition: var(--transition);
+        }
+        .btn-sm-danger:hover { opacity: 1; background: rgba(220,38,38,0.08); }
+        .btn-sm-logout {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            background: none; border: 1px solid var(--border-card);
+            color: var(--text-secondary); font-family: 'Inter', sans-serif;
+            font-size: 0.85rem; font-weight: 500;
+            padding: 0.4rem 0.9rem; border-radius: 8px;
+            cursor: pointer; transition: var(--transition);
+        }
+        .btn-sm-logout:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+        /* ── Account cards (right column) — same pattern as .account-card ── */
+        .accounts-list { display: flex; flex-direction: column; gap: 1rem; }
+
+        .account-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 16px;
+            padding: 1.25rem 1.5rem;
+            transition: var(--transition);
+            display: flex; align-items: center; justify-content: space-between;
+            animation: slideDown 0.3s ease;
+        }
+        .account-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            border-color: rgba(37,99,235,0.15);
+        }
+
+        .account-left { display: flex; align-items: center; gap: 1rem; }
+        .account-icon {
+            width: 40px; height: 40px;
+            background: rgba(37,99,235,0.07);
+            border: 1px solid rgba(37,99,235,0.12);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .account-bank {
+            font-size: 1rem; font-weight: 700; color: var(--text-primary);
+        }
+        .account-holder {
+            font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.1rem;
+        }
+        .account-number {
+            font-family: monospace; font-size: 0.8rem;
+            color: var(--text-secondary); margin-top: 0.1rem;
+        }
+
+        /* ── Section label — small caps like dashboard column headings ── */
+        .section-label {
+            font-size: 0.8rem; font-weight: 600;
+            color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center; padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            background: var(--bg-card);
+            border: 1px dashed var(--border-card);
+            border-radius: 16px;
+        }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+        .empty-title { font-weight: 700; font-size: 1rem; color: var(--text-primary); margin-bottom: 0.3rem; }
+        .empty-desc  { font-size: 0.875rem; }
+
+        @keyframes slideDown {
+            from { transform: translateY(-10px); opacity: 0; }
+            to   { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header — mirrors dashboard header exactly -->
+        <header>
+            <div class="brand">
+                <div class="brand-logo">CP</div>
+                <div>
+                    <h1>CashProof</h1>
+                </div>
+                <span class="brand-badge">My Accounts</span>
+            </div>
+            <div class="header-right">
+                <div class="user-pill">
+                    <div class="user-avatar">{{ request.user.username|slice:":1"|upper }}</div>
+                    {{ request.user.username }}
+                </div>
+                <form method="POST" action="{% url 'logout' %}" style="margin:0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-sm-logout" id="logout-btn">Sign Out</button>
+                </form>
+            </div>
+        </header>
+
+        <!-- Alerts -->
+        {% if messages %}
+        <div class="messages" style="margin-bottom:1.5rem;">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">
+                <span>{{ message }}</span>
+                <button class="alert-close" onclick="this.parentElement.remove();">&times;</button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Page title -->
+        <div class="page-header">
+            <h2 class="page-title">
+                Bank Accounts
+                <span class="count-badge">{{ accounts.count }}</span>
+            </h2>
+            <p class="page-subtitle">Add and manage all your bank accounts in one place.</p>
+        </div>
+
+        <!-- Two-column workspace layout — matches dashboard -->
+        <div class="workspace-layout">
+
+            <!-- Left sidebar: Add Account form -->
+            <div>
+                <div class="panel">
+                    <div class="panel-title">Add Bank Account</div>
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-error" style="margin-bottom:1rem;">
+                        <span>{% for e in form.non_field_errors %}{{ e }}{% endfor %}</span>
+                    </div>
+                    {% endif %}
+
+                    <form method="POST" id="add-account-form" novalidate>
+                        {% csrf_token %}
+
+                        <div class="form-group">
+                            <label class="form-label" for="id_holder_name">Account Holder Name</label>
+                            <input type="text" class="form-control" id="id_holder_name" name="account_holder_name"
+                                value="{{ form.account_holder_name.value|default:'' }}"
+                                placeholder="Full name on the account" autocomplete="name">
+                            {% for e in form.account_holder_name.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="id_bank_name">Bank Name</label>
+                            <input type="text" class="form-control" id="id_bank_name" name="bank_name"
+                                value="{{ form.bank_name.value|default:'' }}"
+                                placeholder="e.g. Chase, Wells Fargo, BOA">
+                            {% for e in form.bank_name.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="id_account_number">Account Number</label>
+                            <input type="text" class="form-control" id="id_account_number" name="account_number"
+                                value="{{ form.account_number.value|default:'' }}"
+                                placeholder="Full account number">
+                            {% for e in form.account_number.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" id="add-account-btn">
+                            + Add Account
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right: Account list -->
+            <div>
+                <p class="section-label">Linked Accounts</p>
+
+                {% if accounts %}
+                <div class="accounts-list">
+                    {% for acc in accounts %}
+                    <div class="account-card" id="account-{{ acc.pk }}">
+                        <div class="account-left">
+                            <div class="account-icon">🏦</div>
+                            <div>
+                                <div class="account-bank">{{ acc.bank_name }}</div>
+                                <div class="account-holder">{{ acc.account_holder_name }}</div>
+                                <div class="account-number">•••• {{ acc.account_number|slice:"-4:" }}</div>
+                            </div>
+                        </div>
+                        <form method="POST" action="{% url 'delete_bank_account' acc.pk %}"
+                              onsubmit="return confirm('Remove this bank account?');" style="margin:0;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-sm-danger" id="delete-acc-{{ acc.pk }}">
+                                ✕ Remove
+                            </button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">🏦</div>
+                    <div class="empty-title">No bank accounts yet</div>
+                    <p class="empty-desc">Add your first bank account using the form on the left.</p>
+                </div>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</body>
+</html>

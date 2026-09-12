@@ -4,7 +4,7 @@ from ..models import StatementUpload, BankAccount, Transaction
 from .csv_excel import CSVExcelParser
 from .pdf_parser import PDFStatementParser
 
-def process_statement(upload_id):
+def process_statement(upload_id, user=None):
     """
     Processes an uploaded statement, saving accounts and transactions.
     """
@@ -83,7 +83,7 @@ def process_statement(upload_id):
         upload.save()
         
         # Trigger cross-account interbank matching and recalculate all summaries
-        run_interbank_detection_for_upload()
+        run_interbank_detection_for_upload(user=user)
         
         return bank_account
 
@@ -140,9 +140,9 @@ def update_account_aggregates(bank_account):
 
     bank_account.save()
 
-def run_interbank_detection_for_upload():
+def run_interbank_detection_for_upload(user=None):
     """
-    Trigger interbank matching and update all accounts.
+    Trigger interbank matching and update all accounts scoped to the given user.
     """
     from ..services import detect_interbank_transactions
-    detect_interbank_transactions()
+    detect_interbank_transactions(user=user)

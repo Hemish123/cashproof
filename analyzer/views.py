@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, Http404
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
 from decimal import Decimal
 import tempfile
@@ -12,12 +13,14 @@ from .parsers.manager import process_statement
 from .services import detect_interbank_transactions
 from .reports import generate_excel_report
 
+
+@login_required(login_url='login')
 def dashboard_view(request):
     if request.method == 'POST':
         files = request.FILES.getlist('file')
         if files:
-            # Clear previous uploads and associated media files for fresh analysis session
-            for old_upload in StatementUpload.objects.all():
+            # Clear this user's previous uploads and associated media files
+            for old_upload in StatementUpload.objects.filter(user=request.user):
                 if old_upload.file:
                     try:
                         if os.path.exists(old_upload.file.path):
@@ -28,16 +31,17 @@ def dashboard_view(request):
 
             success_count = 0
             for f in files:
-                upload = StatementUpload.objects.create(file=f)
+                # Attach upload to logged-in user
+                upload = StatementUpload.objects.create(file=f, user=request.user)
                 try:
-                    process_statement(upload.id)
+                    process_statement(upload.id, user=request.user)
                     success_count += 1
                 except Exception as e:
                     messages.error(request, f"Failed to parse {getattr(f, 'name', str(f))}: {str(e)}")
-            
-            # Recalculate interbank transactions for current batch
-            detect_interbank_transactions()
-            
+
+            # Recalculate interbank for this user's current batch
+            detect_interbank_transactions(user=request.user)
+
             if success_count > 0:
                 messages.success(request, f"Successfully uploaded and analyzed {success_count} statement(s)!")
             return redirect('dashboard')
@@ -46,18 +50,22 @@ def dashboard_view(request):
     else:
         form = StatementUploadForm()
 
-    uploads = StatementUpload.objects.all().order_by('-uploaded_at')
-    accounts = BankAccount.objects.all().order_by('bank_name')
-    transactions = Transaction.objects.all().order_by('-date', '-id')[:150]
+    # Scope all data to the logged-in user
+    uploads = StatementUpload.objects.filter(user=request.user).order_by('-uploaded_at')
+    user_upload_ids = uploads.values_list('id', flat=True)
+    accounts = BankAccount.objects.filter(upload_id__in=user_upload_ids).order_by('bank_name')
+    transactions = Transaction.objects.filter(
+        account__upload_id__in=user_upload_ids
+    ).order_by('-date', '-id')[:150]
 
-    # Calculate global totals
+    # Calculate global totals (user-scoped)
     global_total_deposits = accounts.aggregate(total=Sum('total_deposits'))['total'] or Decimal('0.00')
     global_total_payments = accounts.aggregate(total=Sum('total_payments'))['total'] or Decimal('0.00')
     global_total_interbank_deposits = accounts.aggregate(total=Sum('total_interbank_deposits'))['total'] or Decimal('0.00')
     global_total_interbank_payments = accounts.aggregate(total=Sum('total_interbank_payments'))['total'] or Decimal('0.00')
     global_net_deposits = accounts.aggregate(total=Sum('net_deposits'))['total'] or Decimal('0.00')
     global_net_payments = accounts.aggregate(total=Sum('net_payments'))['total'] or Decimal('0.00')
-    
+
     global_net_cash_flow = global_net_deposits - global_net_payments
 
     context = {
@@ -75,36 +83,43 @@ def dashboard_view(request):
     }
     return render(request, 'analyzer/dashboard.html', context)
 
+
+@login_required(login_url='login')
 def delete_upload_view(request, upload_id):
     try:
-        upload = StatementUpload.objects.get(id=upload_id)
+        # Only allow deleting the user's own uploads
+        upload = StatementUpload.objects.get(id=upload_id, user=request.user)
         filename = upload.filename()
-        
-        # Delete file from storage
+
         if upload.file:
             try:
                 if os.path.exists(upload.file.path):
                     os.remove(upload.file.path)
             except Exception:
                 pass
-                
+
         upload.delete()
-        
-        # Trigger recalculation of interbank pairs
-        detect_interbank_transactions()
+
+        # Recalculate interbank pairs for remaining uploads
+        detect_interbank_transactions(user=request.user)
         messages.success(request, f"Deleted statement {filename} and recalculated accounts.")
     except StatementUpload.DoesNotExist:
         messages.error(request, "Statement not found.")
-        
+
     return redirect('dashboard')
 
+
+@login_required(login_url='login')
 def download_report_view(request):
-    accounts = BankAccount.objects.all()
+    user_upload_ids = StatementUpload.objects.filter(
+        user=request.user
+    ).values_list('id', flat=True)
+    accounts = BankAccount.objects.filter(upload_id__in=user_upload_ids)
+
     if not accounts.exists():
         messages.warning(request, "No processed bank statements available to generate report.")
         return redirect('dashboard')
 
-    # Create temporary file to save report
     with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
         tmp_path = tmp.name
 
@@ -112,7 +127,7 @@ def download_report_view(request):
         generate_excel_report(accounts, tmp_path)
         with open(tmp_path, 'rb') as f:
             file_data = f.read()
-        
+
         response = HttpResponse(
             file_data,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -123,7 +138,6 @@ def download_report_view(request):
         messages.error(request, f"Error generating Excel report: {str(e)}")
         return redirect('dashboard')
     finally:
-        # Cleanup temp file
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
