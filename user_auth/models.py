@@ -11,7 +11,6 @@ class UserProfile(models.Model):
 
 
 class UserBankAccount(models.Model):
-    """A bank account belonging to a user. One user can have many."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_accounts')
     account_holder_name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=50)
