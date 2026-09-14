@@ -452,10 +452,12 @@
 
                 {% else %}
                 <div class="empty-state">
-                    <div class="empty-icon">🔒</div>
-                    <div class="empty-title">Add a bank account first</div>
-                    <p class="empty-desc">You need to link at least one bank account before you can use the analyzer.</p>
-                    <div class="locked-notice">⬅ Use the form on the left to get started</div>
+                    <div class="empty-icon">🏦</div>
+                    <div class="empty-title">No bank accounts linked</div>
+                    <p class="empty-desc">You can link a bank account now or do it later from the analyzer dashboard.</p>
+                    <a href="{% url 'dashboard' %}" class="btn btn-sm-logout" style="margin-top: 1.5rem; width: auto; color: var(--primary); border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.05);">
+                        Skip for now &rarr;
+                    </a>
                 </div>
                 {% endif %}
             </div>

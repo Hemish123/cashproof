@@ -751,9 +751,13 @@
                 </div>
                 <span>Standardizer Engine</span>
             </div>
-            <div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <a href="{% url 'bank_accounts' %}" class="btn" style="width: auto; background: var(--bg-card); border: 1px solid var(--border-card); color: var(--text-primary); font-size: 0.9rem; padding: 0.75rem 1rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Manage Bank Accounts
+                </a>
                 {% if accounts %}
-                    <a href="{% url 'download_report' %}" class="btn btn-primary" style="width: auto;">
+                    <a href="{% url 'download_report' %}" class="btn btn-primary" style="width: auto; font-size: 0.9rem; padding: 0.75rem 1rem;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         Download Unified Excel Report
                     </a>
@@ -1025,18 +1029,67 @@
         {% endif %}
     </div>
 
-    <!-- Javascript for Dynamic Interactions -->
     <script>
-        // Display selected file name in ingestion panel
+        const accumulatedFiles = new DataTransfer();
+
+        function clearFiles() {
+            accumulatedFiles.items.clear();
+            var fileInput = document.getElementById('file-upload-input');
+            fileInput.files = accumulatedFiles.files;
+            var fileText = document.getElementById('selected-file-text');
+            fileText.innerText = "No file chosen";
+            fileText.style.display = 'none';
+        }
+
+        // Display selected file name in ingestion panel and accumulate files
         document.getElementById('file-upload-input').addEventListener('change', function() {
             var fileText = document.getElementById('selected-file-text');
+            
             if (this.files && this.files.length > 0) {
-                if (this.files.length === 1) {
-                    fileText.innerText = "Selected: " + this.files[0].name;
-                } else {
-                    fileText.innerText = "Selected: " + this.files.length + " files";
+                const newFiles = Array.from(this.files);
+                let newUniqueFiles = [];
+                
+                // Filter out duplicates
+                for (let i = 0; i < newFiles.length; i++) {
+                    let isDuplicate = false;
+                    for (let j = 0; j < accumulatedFiles.files.length; j++) {
+                        if (accumulatedFiles.files[j].name === newFiles[i].name && 
+                            accumulatedFiles.files[j].size === newFiles[i].size) {
+                            isDuplicate = true;
+                            break;
+                        }
+                    }
+                    if (!isDuplicate) {
+                        newUniqueFiles.push(newFiles[i]);
+                    }
                 }
-                fileText.style.display = 'block';
+
+                // Check max 5 limit
+                if (accumulatedFiles.files.length + newUniqueFiles.length > 5) {
+                    alert('You can upload a maximum of 5 files at a time.');
+                    this.files = accumulatedFiles.files; // Restore previous selection
+                    return;
+                }
+
+                // Add unique files to the accumulated list
+                for (let i = 0; i < newUniqueFiles.length; i++) {
+                    accumulatedFiles.items.add(newUniqueFiles[i]);
+                }
+                
+                // Update the input's files
+                this.files = accumulatedFiles.files;
+
+                if (this.files.length > 0) {
+                    let fileNames = [];
+                    for (let i = 0; i < this.files.length; i++) {
+                        fileNames.push("• " + this.files[i].name);
+                    }
+                    fileText.innerHTML = "Selected (" + this.files.length + "/5) <a href='javascript:void(0)' onclick='clearFiles(event)' style='color: var(--danger); font-size: 0.75rem; margin-left: 8px; text-decoration: none;'>Clear</a><br><span style='color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; display: inline-block; margin-top: 0.4rem; text-align: left;'>" + fileNames.join("<br>") + "</span>";
+                    fileText.style.display = 'block';
+                }
+            } else if (accumulatedFiles.files.length > 0) {
+                // If user cancels the file dialog, restore the accumulated files
+                this.files = accumulatedFiles.files;
             } else {
                 fileText.innerText = "No file chosen";
                 fileText.style.display = 'none';

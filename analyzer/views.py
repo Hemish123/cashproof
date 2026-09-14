@@ -19,6 +19,10 @@ def dashboard_view(request):
     if request.method == 'POST':
         files = request.FILES.getlist('file')
         if files:
+            if len(files) > 5:
+                messages.error(request, "You can upload a maximum of 5 files at a time.")
+                return redirect('dashboard')
+
             # Clear this user's previous uploads and associated media files
             for old_upload in StatementUpload.objects.filter(user=request.user):
                 if old_upload.file:
