@@ -1154,6 +1154,39 @@
                 }
             }
         }
+
+        // Background task polling logic
+        let isProcessing = false;
+        {% for upload in uploads %}
+            {% if upload.status == 'PENDING' or upload.status == 'PROCESSING' %}
+                isProcessing = true;
+            {% endif %}
+        {% endfor %}
+
+        if (isProcessing) {
+            var overlay = document.getElementById('loading-overlay');
+            var title = document.getElementById('loader-title');
+            var subtitle = document.getElementById('loader-subtitle');
+            
+            if (overlay) {
+                title.innerText = "Analyzing Statements";
+                subtitle.innerText = "Please wait while our AI parses and standardizes your documents. It takes approximately half an minutes...";
+                overlay.style.display = 'flex';
+            }
+
+            // Start polling API
+            const pollInterval = setInterval(() => {
+                fetch("{% url 'upload_status' %}")
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.is_processing) {
+                            clearInterval(pollInterval);
+                            window.location.reload();
+                        }
+                    })
+                    .catch(err => console.error("Polling error:", err));
+            }, 3000); // Poll every 3 seconds
+        }
     </script>
 </body>
 </html>

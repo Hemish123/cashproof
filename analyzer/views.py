@@ -6,12 +6,45 @@ from django.db.models import Sum
 from decimal import Decimal
 import tempfile
 import os
+import threading
+from django.db import connections
+from django.http import JsonResponse
+from django.contrib.auth.models import User
 
 from .models import StatementUpload, BankAccount, Transaction
 from .forms import StatementUploadForm
 from .parsers.manager import process_statement
 from .services import detect_interbank_transactions
 from .reports import generate_excel_report
+
+
+def process_batch_in_background(upload_ids, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+        for uid in upload_ids:
+            try:
+                upload = StatementUpload.objects.get(id=uid)
+                upload.status = 'PROCESSING'
+                upload.save(update_fields=['status'])
+                
+                process_statement(upload.id, user=user)
+                
+                upload.status = 'COMPLETED'
+                upload.save(update_fields=['status'])
+            except Exception as e:
+                try:
+                    upload = StatementUpload.objects.get(id=uid)
+                    upload.status = 'FAILED'
+                    upload.error_message = str(e)
+                    upload.save(update_fields=['status', 'error_message'])
+                except Exception:
+                    pass
+        
+        # Recalculate interbank pairs after all are processed
+        detect_interbank_transactions(user=user)
+    finally:
+        # Prevent database connection leaks in the background thread
+        connections.close_all()
 
 
 @login_required(login_url='login')
@@ -33,21 +66,18 @@ def dashboard_view(request):
                         pass
                 old_upload.delete()
 
-            success_count = 0
+            upload_ids = []
             for f in files:
                 # Attach upload to logged-in user
-                upload = StatementUpload.objects.create(file=f, user=request.user)
-                try:
-                    process_statement(upload.id, user=request.user)
-                    success_count += 1
-                except Exception as e:
-                    messages.error(request, f"Failed to parse {getattr(f, 'name', str(f))}: {str(e)}")
-
-            # Recalculate interbank for this user's current batch
-            detect_interbank_transactions(user=request.user)
-
-            if success_count > 0:
-                messages.success(request, f"Successfully uploaded and analyzed {success_count} statement(s)!")
+                upload = StatementUpload.objects.create(file=f, user=request.user, status='PENDING')
+                upload_ids.append(upload.id)
+                
+            if upload_ids:
+                threading.Thread(
+                    target=process_batch_in_background,
+                    args=(upload_ids, request.user.id)
+                ).start()
+                messages.success(request, f"Started processing {len(upload_ids)} statement(s). This may take a moment.")
             return redirect('dashboard')
         else:
             form = StatementUploadForm(request.POST, request.FILES)
@@ -147,3 +177,12 @@ def download_report_view(request):
                 os.remove(tmp_path)
         except Exception:
             pass
+
+
+@login_required(login_url='login')
+def upload_status_api(request):
+    is_processing = StatementUpload.objects.filter(
+        user=request.user,
+        status__in=['PENDING', 'PROCESSING']
+    ).exists()
+    return JsonResponse({'is_processing': is_processing})
