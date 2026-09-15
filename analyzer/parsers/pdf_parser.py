@@ -7,6 +7,9 @@ import io
 import urllib.request
 import urllib.error
 import datetime
+import concurrent.futures
+import time
+import logging
 from decimal import Decimal
 from django.conf import settings
 from .base import BaseParser
@@ -130,9 +133,10 @@ class PDFStatementParser(BaseParser):
             if not self.end_date:
                 self.end_date = parse_iso_date(meta_res.get("end_date"))
 
-            # Step 2: Extract Transactions Page-by-Page
-            transactions = []
-            for p_idx, page in enumerate(pages):
+            def _process_page(p_idx, page):
+                start_time = time.time()
+                print(f"[DEBUG] Starting AI extraction for page {p_idx + 1}")
+                
                 p_text = page.extract_text() or ""
                 
                 # Check for garbled/scanned content
@@ -178,8 +182,9 @@ class PDFStatementParser(BaseParser):
                         {"role": "user", "content": user_msg}
                     ])
                 except Exception as page_err:
-                    continue
+                    return []
 
+                page_transactions = []
                 for tx in tx_res.get("transactions", []):
                     d_val = parse_iso_date(tx.get("date"))
                     if not d_val:
@@ -190,13 +195,30 @@ class PDFStatementParser(BaseParser):
                     bal_val = self.clean_amount(tx.get("balance")) if tx.get("balance") is not None else None
                     cat_val = self.derive_category(desc_text, tx.get("category"), amt_val)
 
-                    transactions.append({
+                    page_transactions.append({
                         'date': d_val,
                         'description': desc_text,
                         'amount': amt_val,
                         'balance': bal_val,
                         'category': cat_val
                     })
+                
+                elapsed = time.time() - start_time
+                print(f"[DEBUG] Page {p_idx + 1} extraction completed in {elapsed:.2f}s (Found {len(page_transactions)} txs)")
+                return page_transactions
+
+            # Step 2: Extract Transactions Page-by-Page concurrently
+            transactions = []
+            total_start_time = time.time()
+            print(f"[DEBUG] Submitting {len(pages)} pages to ThreadPoolExecutor (max_workers=4)...")
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(_process_page, p_idx, page) for p_idx, page in enumerate(pages)]
+                for future in concurrent.futures.as_completed(futures):
+                    transactions.extend(future.result())
+                    
+            total_elapsed = time.time() - total_start_time
+            print(f"[DEBUG] All pages extracted in {total_elapsed:.2f}s. Total transactions combined: {len(transactions)}")
 
         if not transactions:
             raise ValueError("AI Page-by-Page extraction produced 0 transactions.")
