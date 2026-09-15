@@ -31,10 +31,12 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     ".azurewebsites.net",
+    "cashproof.jmstech.co",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://cashproof-gqhxcje9e4bkg0cu.centralindia-01.azurewebsites.net",
+    "https://cashproof.jmstech.co",
 ]
 
 
