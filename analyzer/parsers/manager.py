@@ -52,6 +52,7 @@ def process_statement(upload_id, user=None):
                 bank_name=account_meta.get('bank_name', 'Unknown Bank'),
                 account_number=account_meta.get('account_number', 'Unknown Account'),
                 account_holder=account_meta.get('account_holder'),
+                account_title=account_meta.get('account_title', 'Operating Account'),
                 currency=account_meta.get('currency', 'USD'),
                 start_date=start_d,
                 end_date=end_d,

@@ -27,6 +27,7 @@ class BankAccount(models.Model):
     bank_name = models.CharField(max_length=100, default='Unknown Bank')
     account_number = models.CharField(max_length=50, default='Unknown Account')
     account_holder = models.CharField(max_length=255, null=True, blank=True)
+    account_title = models.CharField(max_length=255, null=True, blank=True, default='Operating Account')
     currency = models.CharField(max_length=10, default='USD')
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
@@ -52,6 +53,8 @@ class Transaction(models.Model):
     balance = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     category = models.CharField(max_length=100, default='Uncategorized')
     is_interbank = models.BooleanField(default=False)
+    interbank_confidence = models.CharField(max_length=20, null=True, blank=True)
+    interbank_match_status = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         tx_type = "Deposit" if self.amount >= 0 else "Payment"
