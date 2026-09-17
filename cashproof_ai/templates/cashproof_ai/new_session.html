@@ -1,0 +1,192 @@
+{% extends "cashproof_ai/base.html" %}
+{% block title %}New Analysis — CashProof AI{% endblock %}
+{% block meta_description %}Upload bank statements for CashProof AI cash flow analysis.{% endblock %}
+{% block nav_new %}active{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .upload-zone {
+        border: 2.5px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 3rem 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+        background: #fff;
+        position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+        border-color: var(--primary);
+        background: var(--primary-light);
+    }
+    .upload-zone input[type="file"] {
+        position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 2.8rem; margin-bottom: 0.75rem; opacity: 0.5; }
+    .upload-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .upload-sub { font-size: 0.85rem; color: var(--text-muted); }
+    .upload-formats {
+        display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;
+    }
+    .file-list { margin-top: 1rem; }
+    .file-item {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.6rem 1rem; background: var(--bg); border-radius: 8px;
+        margin-top: 0.5rem; font-size: 0.875rem; border: 1px solid var(--border);
+        animation: fadeSlide 0.25s ease;
+    }
+    .file-item-name { font-weight: 500; }
+    .file-item-size { color: var(--text-muted); font-size: 0.78rem; }
+    .file-remove { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 0 0.25rem; }
+    .requirements-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 600px) { .requirements-grid { grid-template-columns: 1fr; } }
+    .req-item { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.875rem; }
+    .req-icon { font-size: 1.1rem; flex-shrink: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">New CashProof AI Analysis</h1>
+    <p class="page-subtitle">Upload bank statements and CashProof AI will produce a fully reconciled, interbank-matched cash flow report.</p>
+</div>
+
+{% comment %} <div style="display:grid; grid-template-columns: 1fr 360px; gap: 1.5rem; align-items: start;"> {% endcomment %}
+
+    <!-- Left: form -->
+    <div style="display:flex; flex-direction:column; gap:1.25rem;">
+
+        <form method="POST" enctype="multipart/form-data" id="analysis-form" novalidate>
+            {% csrf_token %}
+
+            <div class="card" style="margin-bottom:1.25rem;">
+                <div class="card-title">Client Information</div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label" for="id-client-name">Client / Company Name</label>
+                    <input type="text" class="form-control" id="id-client-name" name="client_name"
+                           placeholder="e.g. Kwik Goal LTD" autocomplete="off"
+                           required>
+                    <p style="font-size:0.78rem; color:var(--text-muted); margin-top:0.4rem;">
+                        Used to build the Client Account Master and identify interbank transfers.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:1.25rem;">
+                <div class="card-title">Upload Bank Statements</div>
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" name="files" id="file-input" multiple
+                           accept=".pdf,.csv,.xlsx,.xls" aria-label="Upload bank statements">
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-title">Drop files here or click to browse</div>
+                    <div class="upload-sub">Mix of PDFs, CSVs, and Excel files from any bank</div>
+                    <div class="upload-formats">
+                        <span class="badge badge-muted">PDF</span>
+                        <span class="badge badge-muted">CSV</span>
+                        <span class="badge badge-muted">XLSX</span>
+                        <span class="badge badge-muted">XLS</span>
+                    </div>
+                </div>
+
+                <div class="file-list" id="file-list"></div>
+
+                <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.75rem;">
+                    Maximum 10 files per session. Each file is deduplicated (§7).
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submit-btn" style="width:100%; padding:0.85rem;">
+                🚀 &nbsp; Start Analysis
+            </button>
+        </form>
+    </div>
+
+    <!-- Right: info panel -->
+    {% comment %} <div style="display:flex; flex-direction:column; gap:1rem;">
+        <div class="card">
+            <div class="card-title">What CashProof AI does</div>
+            <div style="display:flex; flex-direction:column; gap:0.75rem; font-size:0.875rem; color:var(--text-muted);">
+                <div class="req-item"><span class="req-icon">📋</span><span>Builds a <strong>Client Account Master</strong> from all uploaded documents</span></div>
+                <div class="req-item"><span class="req-icon">🔍</span><span>Classifies every transaction into <strong>9 categories</strong> (External Deposit, Payment, ACH, Fee, etc.)</span></div>
+                <div class="req-item"><span class="req-icon">🔗</span><span>Runs the <strong>§6 Interbank Matching Algorithm</strong> — scored 0–100, with IB-001 style Match IDs</span></div>
+                <div class="req-item"><span class="req-icon">🧮</span><span>Computes <strong>Net Deposits &amp; Net Payments</strong> after removing confirmed interbank transfers</span></div>
+                <div class="req-item"><span class="req-icon">✅</span><span>Runs <strong>§10 validation checks</strong> — balance reconciliation, paired interbank totals, etc.</span></div>
+                <div class="req-item"><span class="req-icon">📊</span><span>Outputs a <strong>5-sheet Excel workbook</strong> with live formulas</span></div>
+            </div>
+        </div>
+
+        <div class="card" style="background:var(--primary-light); border-color:rgba(37,99,235,0.2);">
+            <div class="card-title" style="color:var(--primary);">Hard Rules (§12)</div>
+            <ul style="font-size:0.82rem; color:#1e40af; padding-left:1.25rem; display:flex; flex-direction:column; gap:0.4rem;">
+                <li>Never classify as interbank on keyword match alone</li>
+                <li>Never exclude one-sided transfers from net totals</li>
+                <li>Never guess an account mapping</li>
+                <li>Never hardcode a total that should be a formula</li>
+                <li>Always reconcile extracted totals vs. statement printed summary</li>
+            </ul>
+        </div>
+    </div> {% endcomment %}
+{% comment %} </div> {% endcomment %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const zone    = document.getElementById('upload-zone');
+    const input   = document.getElementById('file-input');
+    const list    = document.getElementById('file-list');
+    const form    = document.getElementById('analysis-form');
+    const submitBtn = document.getElementById('submit-btn');
+
+    let selectedFiles = new DataTransfer();
+
+    function renderFiles() {
+        list.innerHTML = '';
+        Array.from(selectedFiles.files).forEach((f, i) => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <div>
+                    <div class="file-item-name">${f.name}</div>
+                    <div class="file-item-size">${(f.size / 1024).toFixed(1)} KB</div>
+                </div>
+                <button type="button" class="file-remove" data-idx="${i}" title="Remove">×</button>
+            `;
+            list.appendChild(item);
+        });
+        list.querySelectorAll('.file-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.idx);
+                const newDt = new DataTransfer();
+                Array.from(selectedFiles.files).forEach((f2, j) => { if (j !== idx) newDt.items.add(f2); });
+                selectedFiles = newDt;
+                input.files = selectedFiles.files;
+                renderFiles();
+            });
+        });
+    }
+
+    input.addEventListener('change', () => {
+        Array.from(input.files).forEach(f => {
+            if (selectedFiles.files.length < 10) selectedFiles.items.add(f);
+        });
+        input.files = selectedFiles.files;
+        renderFiles();
+    });
+
+    ['dragover', 'dragenter'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('drag-over'); }));
+    ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, () => zone.classList.remove('drag-over')));
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        Array.from(e.dataTransfer.files).forEach(f => {
+            if (selectedFiles.files.length < 10) selectedFiles.items.add(f);
+        });
+        input.files = selectedFiles.files;
+        renderFiles();
+    });
+
+    form.addEventListener('submit', () => {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span>&nbsp; Starting analysis…';
+    });
+</script>
+{% endblock %}

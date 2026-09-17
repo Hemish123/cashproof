@@ -1,0 +1,332 @@
+{% extends "cashproof_ai/base.html" %}
+{% block title %}{{ session.client_name|default:"Analysis" }} — CashProof AI{% endblock %}
+{% block meta_description %}CashProof AI session dashboard — interbank matches, net cash flow, transaction ledger.{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .progress-bar-wrap { background: var(--border); border-radius: 20px; height: 6px; overflow: hidden; margin-top: 0.5rem; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--success)); border-radius: 20px;
+                    transition: width 0.4s ease; animation: pulse-bar 1.5s ease-in-out infinite; }
+    @keyframes pulse-bar { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+    .account-chip {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+        padding: 0.4rem 0.75rem; font-size: 0.82rem; font-weight: 500;
+    }
+    .report-pre {
+        background: #0f172a; color: #94a3b8; font-family: ui-monospace, 'Courier New', monospace;
+        font-size: 0.78rem; padding: 1.5rem; border-radius: var(--radius-sm);
+        white-space: pre-wrap; overflow-x: auto; line-height: 1.7;
+        max-height: 400px; overflow-y: auto;
+    }
+    .tab-nav { display: flex; gap: 0.25rem; border-bottom: 2px solid var(--border); margin-bottom: 1rem; }
+    .tab-btn {
+        padding: 0.55rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+        border: none; background: none; color: var(--text-muted); border-bottom: 2.5px solid transparent;
+        margin-bottom: -2px; transition: var(--transition); font-family: inherit;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="page-header">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+        <div>
+            <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.25rem;">
+                <h1 class="page-title" style="margin:0;">{{ session.client_name|default:"Unnamed Analysis" }}</h1>
+                {% if session.status == 'COMPLETED' %}
+                    <span class="badge badge-success">✓ Completed</span>
+                {% elif session.status in 'PENDING PROCESSING' %}
+                    <span class="badge badge-primary" id="status-badge"><span class="spinner"></span>&nbsp;Processing</span>
+                {% elif session.status == 'FAILED' %}
+                    <span class="badge badge-danger">✗ Failed</span>
+                {% endif %}
+            </div>
+            <p class="page-subtitle">Session #{{ session.id }} · {{ statements.count }} statement(s) · Created {{ session.created_at|date:"M d, Y H:i" }}</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            {% if session.status == 'COMPLETED' %}
+            <a href="{% url 'cashproof_ai:download_report' session.id %}" class="btn btn-success" id="btn-download-report">
+                ↓ Download Excel Report
+            </a>
+            {% endif %}
+            <a href="{% url 'cashproof_ai:session_list' %}" class="btn btn-secondary">← Back</a>
+        </div>
+    </div>
+
+    {% if session.status in 'PENDING PROCESSING' %}
+    <div style="margin-top:0.75rem;">
+        <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.3rem;">Parsing statements and running interbank matching…</div>
+        <div class="progress-bar-wrap"><div class="progress-bar" style="width:65%;"></div></div>
+    </div>
+    {% endif %}
+
+    {% if session.status == 'FAILED' and session.error_message %}
+    <div class="alert alert-error" style="margin-top:0.75rem;">
+        <span>{{ session.error_message|truncatechars:300 }}</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Summary stat cards -->
+<div class="stats-grid">
+    <div class="stat-card blue">
+        <div class="stat-label">Total Deposits</div>
+        <div class="stat-value">${{ total_deposits|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">before interbank exclusion</div>
+    </div>
+    <div class="stat-card red">
+        <div class="stat-label">Total Payments</div>
+        <div class="stat-value">${{ total_payments|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">before interbank exclusion</div>
+    </div>
+    <div class="stat-card green">
+        <div class="stat-label">Net Deposits</div>
+        <div class="stat-value">${{ net_deposits|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">after confirmed IB removed</div>
+    </div>
+    <div class="stat-card amber">
+        <div class="stat-label">Confirmed IB Matches</div>
+        <div class="stat-value">{{ confirmed_ib }}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">interbank pairs identified</div>
+    </div>
+</div>
+
+<!-- Tab layout -->
+<div class="card" style="padding:0;">
+    <div style="padding:1rem 1.5rem 0;">
+        <div class="tab-nav" id="main-tabs">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="accounts">Accounts ({{ accounts|length }})</button>
+            <button class="tab-btn" data-tab="interbank">Interbank Matches ({{ ib_matches|length }})</button>
+            <button class="tab-btn" data-tab="ledger">Transaction Ledger ({{ recent_txs|length }}+)</button>
+            {% if session.final_text_report %}
+            <button class="tab-btn" data-tab="report">§11 Text Report</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div style="padding:1.25rem 1.5rem;">
+
+        <!-- Overview tab -->
+        <div class="tab-panel active" id="tab-overview">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem;">
+
+                <div>
+                    <div class="section-title" style="margin-bottom:0.75rem;">📁 Uploaded Statements</div>
+                    {% for stmt in statements %}
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0; border-bottom:1px solid var(--border); font-size:0.875rem;">
+                        <div>
+                            <div style="font-weight:500;">{{ stmt.filename }}</div>
+                            <div style="font-size:0.78rem; color:var(--text-muted);">
+                                {{ stmt.bank_name_extracted|default:"Bank not detected" }} ·
+                                {{ stmt.period_start|date:"M d, Y"|default:"?" }} – {{ stmt.period_end|date:"M d, Y"|default:"?" }}
+                            </div>
+                        </div>
+                        {% if stmt.parse_status == 'COMPLETED' %}
+                            <span class="badge badge-success" style="font-size:0.68rem;">✓ Parsed</span>
+                        {% elif stmt.parse_status == 'FAILED' %}
+                            <span class="badge badge-danger" style="font-size:0.68rem;">Failed</span>
+                        {% else %}
+                            <span class="badge badge-primary" style="font-size:0.68rem;"><span class="spinner"></span></span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div>
+                    <div class="section-title" style="margin-bottom:0.75rem;">🏦 Client Account Master</div>
+                    {% for acct in accounts %}
+                    <div class="account-chip" style="margin:0 0.4rem 0.4rem 0; display:inline-flex;">
+                        {% if acct.mapping_status != 'MAPPED' %}⚠️{% else %}✓{% endif %}
+                        {{ acct.bank_name|default:"Unknown" }} ···{{ acct.last4|default:"????" }}
+                        <span class="badge badge-muted" style="font-size:0.65rem; padding:0.1rem 0.35rem;">{{ acct.account_type }}</span>
+                    </div>
+                    {% empty %}
+                    <p style="color:var(--text-muted); font-size:0.875rem;">No accounts mapped yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounts tab -->
+        <div class="tab-panel" id="tab-accounts">
+            {% if accounts %}
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Bank</th><th>Account #</th><th>Last 4</th><th>Type</th>
+                            <th class="num">Total Deposits</th><th class="num">Total Payments</th>
+                            <th class="num">IB Deposits</th><th class="num">IB Payments</th>
+                            <th class="num">Net Deposits</th><th class="num">Net Payments</th>
+                            <th>Mapping</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for a in accounts %}
+                    <tr>
+                        <td>{{ a.bank_name|default:"—" }}</td>
+                        <td class="mono">{{ a.account_number|default:"—" }}</td>
+                        <td class="mono">{{ a.last4|default:"—" }}</td>
+                        <td>{{ a.account_type }}</td>
+                        <td class="num">${{ a.total_deposits|floatformat:2 }}</td>
+                        <td class="num">${{ a.total_payments|floatformat:2 }}</td>
+                        <td class="num">${{ a.total_interbank_deposits|floatformat:2 }}</td>
+                        <td class="num">${{ a.total_interbank_payments|floatformat:2 }}</td>
+                        <td class="num" style="color:var(--success); font-weight:600;">${{ a.net_deposits|floatformat:2 }}</td>
+                        <td class="num">${{ a.net_payments|floatformat:2 }}</td>
+                        <td>
+                            {% if a.mapping_status == 'MAPPED' %}
+                                <span class="badge badge-success">Mapped</span>
+                            {% else %}
+                                <span class="badge badge-warning" title="{{ a.mapping_status }}">⚠ Review</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-icon">🏦</div><div class="empty-state-text">No accounts mapped yet.</div></div>
+            {% endif %}
+        </div>
+
+        <!-- Interbank tab -->
+        <div class="tab-panel" id="tab-interbank">
+            {% if ib_matches %}
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Match ID</th><th>Date</th><th>From Account</th><th>To Account</th>
+                            <th class="num">Amount</th><th>Confidence</th><th>Status</th><th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for m in ib_matches %}
+                    <tr class="{% if m.status == 'CONFIRMED_INTERBANK' %}row-ib-confirmed{% else %}row-ib-possible{% endif %}">
+                        <td><strong>{{ m.match_id }}</strong></td>
+                        <td class="mono">{{ m.match_date }}</td>
+                        <td class="mono">{{ m.from_bank }} ···{{ m.from_account|slice:"-4:" }}</td>
+                        <td class="mono">{{ m.to_bank }} ···{{ m.to_account|slice:"-4:" }}</td>
+                        <td class="num">${{ m.amount|floatformat:2 }}</td>
+                        <td class="num">{{ m.confidence_score }}/100</td>
+                        <td>
+                            {% if m.status == 'CONFIRMED_INTERBANK' %}
+                                <span class="badge badge-amber">Confirmed</span>
+                            {% elif m.status == 'HIGH_PROBABILITY' %}
+                                <span class="badge badge-warning">High Prob.</span>
+                            {% else %}
+                                <span class="badge badge-muted">{{ m.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size:0.78rem; color:var(--text-muted); max-width:280px;">{{ m.reason|truncatechars:120 }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-icon">🔗</div><div class="empty-state-text">No interbank matches found yet.</div></div>
+            {% endif %}
+        </div>
+
+        <!-- Ledger tab -->
+        <div class="tab-panel" id="tab-ledger">
+            {% if recent_txs %}
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
+                Showing up to 200 most recent transactions. Download the Excel report for the full ledger.
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Bank</th><th>Account</th>
+                            <th>Description</th><th class="num">Debit</th><th class="num">Credit</th>
+                            <th>Type</th><th>IB Status</th><th>Match ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for tx in recent_txs %}
+                    <tr class="{% if tx.interbank_status == 'CONFIRMED_INTERBANK' %}row-ib-confirmed{% elif tx.interbank_status in 'POSSIBLE_UNMATCHED POSSIBLE_INTERBANK AMBIGUOUS' %}row-ib-possible{% endif %}">
+                        <td class="mono">{{ tx.transaction_date }}</td>
+                        <td>{{ tx.bank_name|default:"—"|truncatechars:16 }}</td>
+                        <td class="mono">···{{ tx.last4|default:"????" }}</td>
+                        <td style="max-width:260px; font-size:0.82rem;">{{ tx.description|truncatechars:80 }}</td>
+                        <td class="num" style="color:var(--danger);">{% if tx.debit_amount %}${{ tx.debit_amount|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td class="num" style="color:var(--success);">{% if tx.credit_amount %}${{ tx.credit_amount|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td><span class="badge badge-muted" style="font-size:0.68rem;">{{ tx.transaction_type }}</span></td>
+                        <td>
+                            {% if tx.interbank_status == 'CONFIRMED_INTERBANK' %}
+                                <span class="badge badge-amber" style="font-size:0.68rem;">Confirmed IB</span>
+                            {% elif tx.interbank_status == 'POSSIBLE_UNMATCHED' %}
+                                <span class="badge badge-warning" style="font-size:0.68rem;">Possible</span>
+                            {% elif tx.interbank_status == 'HIGH_PROBABILITY_INTERBANK' %}
+                                <span class="badge badge-warning" style="font-size:0.68rem;">High Prob.</span>
+                            {% elif tx.interbank_status == 'NOT_INTERBANK' %}
+                                <span style="font-size:0.75rem; color:var(--text-muted);">—</span>
+                            {% else %}
+                                <span class="badge badge-muted" style="font-size:0.65rem;">{{ tx.interbank_status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="mono" style="font-size:0.78rem;">{{ tx.interbank_match.match_id|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No transactions yet.</div></div>
+            {% endif %}
+        </div>
+
+        <!-- Text report tab -->
+        {% if session.final_text_report %}
+        <div class="tab-panel" id="tab-report">
+            <pre class="report-pre">{{ session.final_text_report }}</pre>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Tab switching
+    const tabBtns   = document.querySelectorAll('.tab-btn');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabPanels.forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-' + btn.dataset.tab)?.classList.add('active');
+        });
+    });
+
+    // Poll for status updates while processing
+    {% if session.status in 'PENDING PROCESSING' %}
+    (function poll() {
+        fetch('{% url "cashproof_ai:session_status_api" session.id %}')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.is_processing) {
+                    location.reload();
+                } else {
+                    setTimeout(poll, 3500);
+                }
+            })
+            .catch(() => setTimeout(poll, 5000));
+    })();
+    {% endif %}
+</script>
+{% endblock %}

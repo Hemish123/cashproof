@@ -1,0 +1,74 @@
+{% extends "cashproof_ai/base.html" %}
+{% block title %}My Analyses — CashProof AI{% endblock %}
+{% block meta_description %}View and manage your CashProof AI bank statement analysis sessions.{% endblock %}
+{% block nav_sessions %}active{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+        <div>
+            <h1 class="page-title">My Analyses</h1>
+            <p class="page-subtitle">All CashProof AI sessions for your account</p>
+        </div>
+        <a href="{% url 'cashproof_ai:new_session' %}" class="btn btn-primary" id="btn-new-session">
+            <span>＋</span> New Analysis
+        </a>
+    </div>
+</div>
+
+{% if sessions %}
+<div style="display:grid; gap:1rem;">
+    {% for s in sessions %}
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; padding:1.25rem 1.5rem;">
+        <div style="flex:1; min-width:200px;">
+            <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.3rem;">
+                <span style="font-weight:700; font-size:1rem;">{{ s.client_name|default:"(No client name)" }}</span>
+                {% if s.status == 'COMPLETED' %}
+                    <span class="badge badge-success">✓ Completed</span>
+                {% elif s.status == 'PROCESSING' or s.status == 'PENDING' %}
+                    <span class="badge badge-primary"><span class="spinner"></span>&nbsp;Processing</span>
+                {% elif s.status == 'FAILED' %}
+                    <span class="badge badge-danger">✗ Failed</span>
+                {% endif %}
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">
+                {{ s.statements.count }} statement(s) · Created {{ s.created_at|date:"M d, Y H:i" }}
+                {% if s.client_accounts.count %}
+                · {{ s.client_accounts.count }} account(s)
+                {% endif %}
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <a href="{% url 'cashproof_ai:session_detail' s.id %}" class="btn btn-secondary btn-sm">View</a>
+            {% if s.status == 'COMPLETED' %}
+            <a href="{% url 'cashproof_ai:download_report' s.id %}" class="btn btn-success btn-sm" id="btn-download-{{ s.id }}">↓ Excel</a>
+            {% endif %}
+            <form method="POST" action="{% url 'cashproof_ai:delete_session' s.id %}" style="display:inline;" onsubmit="return confirm('Delete this session and all its data?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📂</div>
+        <div style="font-size:1.05rem; font-weight:600; margin-bottom:0.4rem;">No analyses yet</div>
+        <div class="empty-state-text" style="margin-bottom:1.25rem;">Upload bank statements to start your first CashProof AI analysis.</div>
+        <a href="{% url 'cashproof_ai:new_session' %}" class="btn btn-primary">Start New Analysis</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-refresh if any session is still processing
+    const hasProcessing = document.querySelector('.badge-primary');
+    if (hasProcessing) {
+        setTimeout(() => location.reload(), 4000);
+    }
+</script>
+{% endblock %}

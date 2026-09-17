@@ -21,7 +21,8 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('analyzer/', include('analyzer.urls')),
+    # path('analyzer/', include('analyzer.urls')),  # Disabled — replaced by cashproof_ai
+    path('cashproof-ai/', include('cashproof_ai.urls')),
     path('', include('user_auth.urls')),
 ]
 

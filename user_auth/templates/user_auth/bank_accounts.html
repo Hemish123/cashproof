@@ -441,12 +441,11 @@
                     {% endfor %}
                 </div>
 
-                <!-- Analyzer CTA — only shown when at least one account exists -->
                 <div class="analyzer-cta" id="analyzer-cta">
                     <div class="analyzer-cta-title">✅ You're all set!</div>
-                    <div class="analyzer-cta-desc">Your bank account is linked. Now upload and analyze your bank statements.</div>
-                    <a href="{% url 'dashboard' %}" class="btn-analyzer" id="go-to-analyzer-btn">
-                        📊 Go to Analyzer
+                    <div class="analyzer-cta-desc">Your bank account is linked. Now upload your bank statements for AI-powered cash flow analysis.</div>
+                    <a href="{% url 'cashproof_ai:new_session' %}" class="btn-analyzer" id="go-to-analyzer-btn">
+                        🚀 Go to CashProof AI
                     </a>
                 </div>
 
@@ -455,7 +454,7 @@
                     <div class="empty-icon">🏦</div>
                     <div class="empty-title">No bank accounts linked</div>
                     <p class="empty-desc">You can link a bank account now or do it later from the analyzer dashboard.</p>
-                    <a href="{% url 'dashboard' %}" class="btn btn-sm-logout" style="margin-top: 1.5rem; width: auto; color: var(--primary); border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.05);">
+                    <a href="{% url 'cashproof_ai:new_session' %}" class="btn btn-sm-logout" style="margin-top: 1.5rem; width: auto; color: var(--primary); border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.05);">
                         Skip for now &rarr;
                     </a>
                 </div>

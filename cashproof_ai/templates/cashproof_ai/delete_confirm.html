@@ -1,0 +1,23 @@
+{% extends "cashproof_ai/base.html" %}
+{% block title %}Delete Session — CashProof AI{% endblock %}
+
+{% block content %}
+<div style="max-width:480px; margin:3rem auto;">
+    <div class="card" style="text-align:center; padding:2.5rem 2rem;">
+        <div style="font-size:2.5rem; margin-bottom:1rem;">🗑️</div>
+        <h2 style="font-size:1.15rem; font-weight:700; margin-bottom:0.4rem;">Delete this session?</h2>
+        <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1.75rem;">
+            <strong>{{ session.client_name|default:"Unnamed" }}</strong> — Session #{{ session.id }}<br>
+            All uploaded files, transactions, and interbank matches will be permanently deleted.
+            This cannot be undone.
+        </p>
+        <div style="display:flex; gap:0.75rem; justify-content:center;">
+            <a href="{% url 'cashproof_ai:session_detail' session.id %}" class="btn btn-secondary">Cancel</a>
+            <form method="POST">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger" id="confirm-delete-btn">Yes, delete</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

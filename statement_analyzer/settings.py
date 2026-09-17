@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-f36c5-g0n_n-$6+b3lgfaj705r0y^%=623)px1jeu+)c16$xwi'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = [
     "cashproof-gqhxcje9e4bkg0cu.centralindia-01.azurewebsites.net",
@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'analyzer',
     'user_auth',
+    'cashproof_ai',
 ]
 
 MIDDLEWARE = [
