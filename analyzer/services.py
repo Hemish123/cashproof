@@ -350,7 +350,6 @@ def detect_interbank_transactions(user=None):
             # deliberately excluded.
             other_holder_norm = ap.get('holder_norm')
             if (other_holder_norm and len(other_holder_norm) >= 3
-                    and other_holder_norm != own_holder_norm
                     and re.search(rf'(?<![a-z0-9]){re.escape(other_holder_norm)}(?![a-z0-9])', desc_norm)):
                 return True
 
@@ -406,6 +405,61 @@ def detect_interbank_transactions(user=None):
     if to_save:
         Transaction.objects.bulk_update(
             to_save, ['is_interbank', 'interbank_confidence', 'interbank_match_status']
+        )
+
+    # --- Rule 5b: find and flag the counterpart of every Rule 5 match ---
+    # Rule 5 only proves ONE leg of a transfer is interbank (the leg whose
+    # description references the other account). Without this step the
+    # opposite leg — on the other account — is never flagged, so it stays
+    # in total_deposits/total_payments while only one side is subtracted
+    # out in total_interbank_deposits/total_interbank_payments. That
+    # imbalance is exactly what breaks Net Deposits / Net Payments (and
+    # the global totals) when a Rule 5 match happens. We look for the
+    # opposite-sign, matching-amount, nearby-date transaction on another
+    # of the client's accounts, the same way Rule 3/4 does below, and
+    # flag it too.
+    counterpart_txs = []
+    tx_by_id = {t.id: t for t in all_txs}
+    for tx_id in list(rule5_confirmed_ids):
+        tx = tx_by_id[tx_id]
+        target_amount = abs(tx.amount)
+        min_date, max_date = _business_day_window(tx.date, max_business_days=2)
+
+        candidates = []
+        for other in all_txs:
+            if other.id == tx.id or other.id in rule5_confirmed_ids or other.id in permanently_excluded_ids:
+                continue
+            if other.account_id == tx.account_id:
+                continue
+            if not is_same_client(tx.account_id, other.account_id):
+                continue
+            if abs(other.amount) != target_amount:
+                continue
+            if (other.amount > 0) == (tx.amount > 0):
+                continue  # must be the opposite side (inflow vs outflow)
+            if not (min_date <= other.date <= max_date):
+                continue
+            candidates.append(other)
+
+        if not candidates:
+            continue
+
+        candidates.sort(key=lambda c: abs((c.date - tx.date).days))
+        best_gap = abs((candidates[0].date - tx.date).days)
+        tied = [c for c in candidates if abs((c.date - tx.date).days) == best_gap]
+        if len(tied) > 1:
+            continue  # ambiguous — don't guess, leave for manual review
+
+        counterpart = tied[0]
+        counterpart.is_interbank = True
+        counterpart.interbank_confidence = 'high'  # inferred from the matched leg, not its own description
+        counterpart.interbank_match_status = 'confirmed_description_counterpart'
+        rule5_confirmed_ids.add(counterpart.id)
+        counterpart_txs.append(counterpart)
+
+    if counterpart_txs:
+        Transaction.objects.bulk_update(
+            counterpart_txs, ['is_interbank', 'interbank_confidence', 'interbank_match_status']
         )
 
     # --- Rule 3/4: amount + business-day-window pairing ---

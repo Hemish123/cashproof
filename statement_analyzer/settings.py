@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -24,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-f36c5-g0n_n-$6+b3lgfaj705r0y^%=623)px1jeu+)c16$xwi'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = [
     "cashproof-gqhxcje9e4bkg0cu.centralindia-01.azurewebsites.net",
@@ -190,3 +192,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Media files (Uploaded statements)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # choose a model you have access to
+OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "15"))
+
+
+MAX_CONCURRENT_FILES = 3   # how many files process at once
+MAX_PDF_WORKERS = 20       # how many pages per file process at once

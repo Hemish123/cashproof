@@ -10,25 +10,57 @@ import threading
 from django.db import connections
 from django.http import JsonResponse
 from django.contrib.auth.models import User
-
+from django.conf import settings
 from .models import StatementUpload, BankAccount, Transaction
 from .forms import StatementUploadForm
+from user_auth.models import UserBankAccount
 from .parsers.manager import process_statement
 from .services import detect_interbank_transactions
 from .reports import generate_excel_report
+import concurrent.futures
+
+
+# def process_batch_in_background(upload_ids, user_id):
+#     try:
+#         user = User.objects.get(id=user_id)
+#         for uid in upload_ids:
+#             try:
+#                 upload = StatementUpload.objects.get(id=uid)
+#                 upload.status = 'PROCESSING'
+#                 upload.save(update_fields=['status'])
+                
+#                 process_statement(upload.id, user=user)
+                
+#                 upload.status = 'COMPLETED'
+#                 upload.save(update_fields=['status'])
+#             except Exception as e:
+#                 try:
+#                     upload = StatementUpload.objects.get(id=uid)
+#                     upload.status = 'FAILED'
+#                     upload.error_message = str(e)
+#                     upload.save(update_fields=['status', 'error_message'])
+#                 except Exception:
+#                     pass
+        
+#         # Recalculate interbank pairs after all are processed
+#         detect_interbank_transactions(user=user)
+#     finally:
+#         # Prevent database connection leaks in the background thread
+#         connections.close_all()
 
 
 def process_batch_in_background(upload_ids, user_id):
     try:
         user = User.objects.get(id=user_id)
-        for uid in upload_ids:
+
+        def _process_one(uid):
             try:
                 upload = StatementUpload.objects.get(id=uid)
                 upload.status = 'PROCESSING'
                 upload.save(update_fields=['status'])
-                
+
                 process_statement(upload.id, user=user)
-                
+
                 upload.status = 'COMPLETED'
                 upload.save(update_fields=['status'])
             except Exception as e:
@@ -39,7 +71,13 @@ def process_batch_in_background(upload_ids, user_id):
                     upload.save(update_fields=['status', 'error_message'])
                 except Exception:
                     pass
-        
+            finally:
+                connections.close_all()
+
+        max_concurrent_files = getattr(settings, 'MAX_CONCURRENT_FILES', 3)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent_files) as executor:
+            list(executor.map(_process_one, upload_ids))
+
         # Recalculate interbank pairs after all are processed
         detect_interbank_transactions(user=user)
     finally:
@@ -49,6 +87,10 @@ def process_batch_in_background(upload_ids, user_id):
 
 @login_required(login_url='login')
 def dashboard_view(request):
+    if not UserBankAccount.objects.filter(user=request.user).exists():
+        messages.info(request, "Please add at least one bank account to continue.")
+        return redirect('bank_accounts')
+
     if request.method == 'POST':
         files = request.FILES.getlist('file')
         if files:
