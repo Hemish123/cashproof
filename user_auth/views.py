@@ -84,3 +84,21 @@ def delete_bank_account_view(request, pk):
         account.delete()
         messages.success(request, "Bank account removed.")
     return redirect('bank_accounts')
+
+
+@login_required(login_url='login')
+def edit_bank_account_view(request, pk):
+    account = get_object_or_404(UserBankAccount, pk=pk, user=request.user)
+    form = BankAccountForm(instance=account)
+
+    if request.method == 'POST':
+        form = BankAccountForm(request.POST, instance=account)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Bank account updated successfully!")
+            return redirect('bank_accounts')
+
+    return render(request, 'user_auth/edit_bank_account.html', {
+        'form': form,
+        'account': account,
+    })

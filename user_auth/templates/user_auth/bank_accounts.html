@@ -211,6 +211,15 @@
         }
         .btn-sm-logout:hover { background: var(--bg-secondary); color: var(--text-primary); }
 
+        .btn-sm-edit {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            background: none; border: 1px solid var(--border-card); color: var(--text-secondary);
+            cursor: pointer; padding: 0.25rem 0.5rem; text-decoration: none;
+            border-radius: 6px; font-size: 0.8rem; font-family: 'Inter', sans-serif;
+            transition: var(--transition);
+        }
+        .btn-sm-edit:hover { background: var(--bg-secondary); color: var(--text-primary); border-color: #cbd5e1; }
+
         /* ── Analyzer CTA ── */
         .analyzer-cta {
             margin-top: 1.5rem;
@@ -430,13 +439,18 @@
                                 <div class="account-number">•••• {{ acc.account_number|slice:"-4:" }}</div>
                             </div>
                         </div>
-                        <form method="POST" action="{% url 'delete_bank_account' acc.pk %}"
-                              onsubmit="return confirm('Remove this bank account?');" style="margin:0;">
-                            {% csrf_token %}
-                            <button type="submit" class="btn-sm-danger" id="delete-acc-{{ acc.pk }}">
-                                ✕ Remove
-                            </button>
-                        </form>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <a href="{% url 'edit_bank_account' acc.pk %}" class="btn-sm-edit" id="edit-acc-{{ acc.pk }}">
+                                ✎ Edit
+                            </a>
+                            <form method="POST" action="{% url 'delete_bank_account' acc.pk %}"
+                                  onsubmit="return confirm('Remove this bank account?');" style="margin:0;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-sm-danger" id="delete-acc-{{ acc.pk }}">
+                                    ✕ Remove
+                                </button>
+                            </form>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>

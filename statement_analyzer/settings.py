@@ -198,5 +198,6 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # choose a model you ha
 OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "15"))
 
 
-MAX_CONCURRENT_FILES = 3   # how many files process at once
-MAX_PDF_WORKERS = 20       # how many pages per file process at once
+MAX_CONCURRENT_FILES = 5   # how many files process at once
+MAX_PDF_WORKERS = 15       # how many pages per file process at once
+PDF_PAGE_CHUNK_SIZE = 5  

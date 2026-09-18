@@ -8,11 +8,24 @@ import urllib.request
 import urllib.error
 import datetime
 import concurrent.futures
+import threading
+import random
 import time
 import logging
 from decimal import Decimal
 from django.conf import settings
 from .base import BaseParser
+
+# Global, process-wide cap on simultaneous OpenAI API calls. Without this,
+# MAX_CONCURRENT_FILES x MAX_PDF_WORKERS (e.g. 5 x 15 = 75) all fire at once
+# across files, which gets throttled/queued by the API and produces wildly
+# uneven, sometimes very long, individual chunk times. Every AI call in this
+# module — from any file, any thread — must acquire this semaphore first, so
+# the actual number of in-flight API requests never exceeds this limit no
+# matter how the file/page concurrency settings are configured.
+_GLOBAL_AI_CALL_SEMAPHORE = threading.Semaphore(
+    getattr(settings, 'MAX_TOTAL_CONCURRENT_AI_CALLS', 15)
+)
 
 class PDFStatementParser(BaseParser):
     def parse(self):
@@ -60,15 +73,43 @@ class PDFStatementParser(BaseParser):
             except Exception:
                 return self.parse_date(d_str)
 
-        def make_ai_request(messages_list):
-            response = client.chat.completions.create(
-                model="gpt-5.5",
-                messages=messages_list,
-                # temperature=0.0,
-                response_format={"type": "json_object"},
-                timeout=60
-            )
-            return json.loads(response.choices[0].message.content)
+        def make_ai_request(messages_list, max_retries=4):
+            # Cap total simultaneous API calls across ALL files/pages being
+            # processed right now, regardless of how many worker threads or
+            # files are configured to run concurrently. This is what
+            # actually prevents throttling-induced stragglers.
+            with _GLOBAL_AI_CALL_SEMAPHORE:
+                last_err = None
+                for attempt in range(max_retries):
+                    try:
+                        response = client.chat.completions.create(
+                            model=openai_model,
+                            messages=messages_list,
+                            # temperature=0.0,
+                            response_format={"type": "json_object"},
+                            timeout=60
+                        )
+                        return json.loads(response.choices[0].message.content)
+                    except Exception as e:
+                        last_err = e
+                        err_text = str(e).lower()
+                        is_rate_limit = (
+                            '429' in err_text or 'rate limit' in err_text
+                            or 'rate_limit' in err_text or 'too many requests' in err_text
+                        )
+                        is_transient = (
+                            is_rate_limit or 'timeout' in err_text or 'timed out' in err_text
+                            or '500' in err_text or '502' in err_text or '503' in err_text
+                        )
+                        if not is_transient or attempt == max_retries - 1:
+                            raise
+                        # Exponential backoff with a little jitter, longer for
+                        # rate limits than for plain timeouts.
+                        base_wait = 5 if is_rate_limit else 2
+                        wait_s = base_wait * (2 ** attempt) + random.uniform(0, 1)
+                        print(f"[DEBUG] Transient API error ({e}); retrying in {wait_s:.1f}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_s)
+                raise last_err
 
         with pdfplumber.open(self.file_path) as pdf:
             pages = pdf.pages
@@ -155,26 +196,51 @@ class PDFStatementParser(BaseParser):
                     'b64_str': b64_str
                 })
 
-            def _process_page(data):
-                p_idx = data['p_idx']
-                p_text = data['p_text']
-                use_vision = data['use_vision']
-                b64_str = data['b64_str']
-                
+            # Step 1b: Group pages into chunks to cut down the number of
+            # separate AI calls. Calling the API once per page (30 calls for
+            # a 30-page statement) pays a fixed per-call overhead (network
+            # round-trip + model latency) 30 times over, and that overhead
+            # dominates total time far more than the actual page content
+            # does. Batching several pages' TEXT into one call cuts total
+            # calls roughly by CHUNK_SIZE, which is the single biggest lever
+            # for reducing wall-clock time. Vision pages (scanned/garbled,
+            # need the actual image) are kept as their own single-page
+            # chunks — images are large and shouldn't be combined.
+            chunk_size = getattr(settings, 'PDF_PAGE_CHUNK_SIZE', 5)
+            chunks = []
+            current_text_chunk = []
+            for data in page_data_list:
+                if data['use_vision']:
+                    if current_text_chunk:
+                        chunks.append(current_text_chunk)
+                        current_text_chunk = []
+                    chunks.append([data])
+                else:
+                    current_text_chunk.append(data)
+                    if len(current_text_chunk) >= chunk_size:
+                        chunks.append(current_text_chunk)
+                        current_text_chunk = []
+            if current_text_chunk:
+                chunks.append(current_text_chunk)
+
+            def _process_chunk(chunk):
+                page_nums = [d['p_idx'] + 1 for d in chunk]
                 start_time = time.time()
-                print(f"[DEBUG] Starting AI extraction for page {p_idx + 1}")
+                print(f"[DEBUG] Starting AI extraction for page(s) {page_nums}")
 
                 tx_instruction = (
-                    f"Extract ALL transaction line items from Page {p_idx + 1} of this bank statement.\n"
+                    f"Extract ALL transaction line items from page(s) {page_nums} of this bank statement.\n"
+                    "If multiple pages are included below, each is clearly marked with a '=== PAGE N ===' "
+                    "header — extract transactions from EVERY page shown, not just the first one.\n"
                     "CRITICAL SIGN RULE: 'amount' MUST be POSITIVE for deposits/credits/inflows, and NEGATIVE for debits/withdrawals/payments/fees.\n"
-                    "SPECIAL RULE FOR CHECKS: If this page contains a 'CHECKS' or 'CHECK NUMBER' table, EVERY amount in that "
+                    "SPECIAL RULE FOR CHECKS: If a page contains a 'CHECKS' or 'CHECK NUMBER' table, EVERY amount in that "
                     "table is a NEGATIVE outflow (money leaving the account) even though no minus sign is printed next to it. "
                     "Checks-paid tables NEVER show a minus sign in bank statements — you must apply the negative sign yourself.\n"
                     "SPECIAL RULE FOR CHECK IMAGES: Some statements include a page of scanned/photographed check images "
                     "(front-of-check facsimiles) near the end, each with its check number, date, and amount printed as a "
                     "caption. These are NOT new transactions — they are pictures of checks already listed once in the "
-                    "'CHECKS' table elsewhere in the statement. If this page is a check-images page, return an EMPTY "
-                    "transactions list for it. Only extract from the actual CHECKS table (plain rows of check number/date/"
+                    "'CHECKS' table elsewhere in the statement. If a page is a check-images page, contribute NO "
+                    "transactions from it. Only extract from the actual CHECKS table (plain rows of check number/date/"
                     "amount with no check imagery), never from a page showing the check facsimiles themselves.\n"
                     "JSON Schema:\n"
                     "{\n"
@@ -190,13 +256,16 @@ class PDFStatementParser(BaseParser):
                     "}"
                 )
 
-                if use_vision and b64_str:
+                if len(chunk) == 1 and chunk[0]['use_vision'] and chunk[0]['b64_str']:
                     user_msg = [
                         {"type": "text", "text": tx_instruction},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_str}"}}
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{chunk[0]['b64_str']}"}}
                     ]
                 else:
-                    user_msg = f"{tx_instruction}\n\nPAGE {p_idx + 1} TEXT:\n{p_text}"
+                    combined_text = "\n\n".join(
+                        f"=== PAGE {d['p_idx'] + 1} ===\n{d['p_text']}" for d in chunk
+                    )
+                    user_msg = f"{tx_instruction}\n\n{combined_text}"
 
                 try:
                     tx_res = make_ai_request([
@@ -204,10 +273,10 @@ class PDFStatementParser(BaseParser):
                         {"role": "user", "content": user_msg}
                     ])
                 except Exception as page_err:
-                    print(f"🛑 [DEBUG] ERROR on page {p_idx + 1}: {page_err}")
+                    print(f"🛑 [DEBUG] ERROR on page(s) {page_nums}: {page_err}")
                     return []
 
-                page_transactions = []
+                chunk_transactions = []
                 for tx in tx_res.get("transactions", []):
                     d_val = parse_iso_date(tx.get("date"))
                     if not d_val:
@@ -218,32 +287,41 @@ class PDFStatementParser(BaseParser):
                     bal_val = self.clean_amount(tx.get("balance")) if tx.get("balance") is not None else None
                     cat_val = self.derive_category(desc_text, tx.get("category"), amt_val)
 
-                    page_transactions.append({
+                    chunk_transactions.append({
                         'date': d_val,
                         'description': desc_text,
                         'amount': amt_val,
                         'balance': bal_val,
                         'category': cat_val
                     })
-                
-                elapsed = time.time() - start_time
-                print(f"[DEBUG] Page {p_idx + 1} extraction completed in {elapsed:.2f}s (Found {len(page_transactions)} txs)")
-                return page_transactions
 
-            # Step 2: Extract Transactions Page-by-Page concurrently
+                elapsed = time.time() - start_time
+                print(f"[DEBUG] Page(s) {page_nums} extraction completed in {elapsed:.2f}s (Found {len(chunk_transactions)} txs)")
+                return chunk_transactions
+
+            # Step 2: Extract Transactions chunk-by-chunk concurrently
             transactions = []
             total_start_time = time.time()
             max_workers = getattr(settings, 'MAX_PDF_WORKERS', 8)
-            print(f"[DEBUG] Submitting {len(pages)} pages to ThreadPoolExecutor (max_workers={max_workers})...")
-            
+            print(f"[DEBUG] Submitting {len(chunks)} chunk(s) covering {len(pages)} pages to ThreadPoolExecutor (max_workers={max_workers})...")
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(_process_page, data) for data in page_data_list]
+                futures = [executor.submit(_process_chunk, chunk) for chunk in chunks]
                 for future in concurrent.futures.as_completed(futures):
                     transactions.extend(future.result())
                     
             total_elapsed = time.time() - total_start_time
             print(f"[DEBUG] All pages extracted in {total_elapsed:.2f}s. Total transactions combined: {len(transactions)}")
 
+            # Safety-net dedup: some statements repeat every check as a
+            # scanned check-image page near the end (check number/date/amount
+            # printed as a caption under each image). If the AI extraction
+            # prompt fails to skip that page, the same check gets extracted
+            # twice — once from the real CHECKS table, once from the image
+            # captions — silently inflating Total Payments. Collapse any
+            # transactions that share the same date AND amount AND look like
+            # a check (description is just a bare check number, e.g. "52233"
+            # or "Check 52233"), keeping only the first occurrence.
             seen_checks = set()
             deduped = []
             check_desc_re = re.compile(r'^\s*(?:check\s*#?\s*)?\d{4,6}\s*\*?\s*$', re.IGNORECASE)
@@ -863,4 +941,3 @@ class PDFStatementParser(BaseParser):
 #             if mappings['date_col_idx'] is not None and mappings['desc_col_idx'] is not None:
 #                 return r_idx, mappings
 #         return None, None
-
