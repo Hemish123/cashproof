@@ -195,9 +195,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # choose a model you have access to
-OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "15"))
+OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "90"))
 
 
 MAX_CONCURRENT_FILES = 5   # how many files process at once
 MAX_PDF_WORKERS = 15       # how many pages per file process at once
-PDF_PAGE_CHUNK_SIZE = 5  
+PDF_PAGE_CHUNK_SIZE = 3

@@ -23,61 +23,76 @@ def process_statement(upload_id, user=None):
         else:
             raise ValueError(f"Unsupported file format: {ext}")
 
-        account_meta, transactions_data = parser.parse()
+        parse_result = parser.parse()
+        # PDFStatementParser now returns a LIST of (account_meta,
+        # transactions) pairs to support statements that cover more than
+        # one bank account in a single file (see pdf_parser.py). Other
+        # parsers (CSV/Excel) still return a single (account_meta,
+        # transactions) tuple — normalize both to a list here so the rest
+        # of this function only has to handle one shape.
+        if isinstance(parse_result, tuple) and len(parse_result) == 2 and isinstance(parse_result[0], dict):
+            parsed_accounts = [parse_result]
+        else:
+            parsed_accounts = parse_result
+
+        created_accounts = []
 
         # Database transaction to write results atomically
         with db_transaction.atomic():
-            # Deduplicate: Remove any existing account for the exact same bank, account number & period
-            start_d = account_meta.get('start_date')
-            end_d = account_meta.get('end_date')
-            if start_d and end_d:
-                existing_accs = list(BankAccount.objects.filter(
+            for account_meta, transactions_data in parsed_accounts:
+                # Deduplicate: Remove any existing account for the exact same bank, account number & period
+                start_d = account_meta.get('start_date')
+                end_d = account_meta.get('end_date')
+                if start_d and end_d:
+                    existing_accs = list(BankAccount.objects.filter(
+                        bank_name=account_meta.get('bank_name', 'Unknown Bank'),
+                        account_number=account_meta.get('account_number', 'Unknown Account'),
+                        start_date=start_d,
+                        end_date=end_d
+                    ))
+                    for old_acc in existing_accs:
+                        old_upload = old_acc.upload
+                        old_acc.delete()
+                        if old_upload and old_upload.id != upload.id:
+                            try:
+                                old_upload.delete()
+                            except Exception:
+                                pass
+
+                # Create Bank Account
+                bank_account = BankAccount.objects.create(
+                    upload=upload,
                     bank_name=account_meta.get('bank_name', 'Unknown Bank'),
                     account_number=account_meta.get('account_number', 'Unknown Account'),
+                    account_holder=account_meta.get('account_holder'),
+                    account_title=account_meta.get('account_title', 'Operating Account'),
+                    currency=account_meta.get('currency', 'USD'),
                     start_date=start_d,
-                    end_date=end_d
-                ))
-                for old_acc in existing_accs:
-                    old_upload = old_acc.upload
-                    old_acc.delete()
-                    if old_upload and old_upload.id != upload.id:
-                        try:
-                            old_upload.delete()
-                        except Exception:
-                            pass
-
-            # Create Bank Account
-            bank_account = BankAccount.objects.create(
-                upload=upload,
-                bank_name=account_meta.get('bank_name', 'Unknown Bank'),
-                account_number=account_meta.get('account_number', 'Unknown Account'),
-                account_holder=account_meta.get('account_holder'),
-                account_title=account_meta.get('account_title', 'Operating Account'),
-                currency=account_meta.get('currency', 'USD'),
-                start_date=start_d,
-                end_date=end_d,
-                beginning_balance=account_meta.get('beginning_balance', 0.00),
-                ending_balance=account_meta.get('ending_balance', 0.00)
-            )
-
-            # Create Transactions
-            tx_instances = []
-            for tx_data in transactions_data:
-                tx_instances.append(
-                    Transaction(
-                        account=bank_account,
-                        date=tx_data['date'],
-                        description=tx_data['description'],
-                        amount=tx_data['amount'],
-                        balance=tx_data.get('balance'),
-                        category=tx_data.get('category', 'Uncategorized'),
-                        is_interbank=False
-                    )
+                    end_date=end_d,
+                    beginning_balance=account_meta.get('beginning_balance', 0.00),
+                    ending_balance=account_meta.get('ending_balance', 0.00)
                 )
-            Transaction.objects.bulk_create(tx_instances)
 
-            # Calculate and update aggregates (temporary values before interbank processing)
-            update_account_aggregates(bank_account)
+                # Create Transactions
+                tx_instances = []
+                for tx_data in transactions_data:
+                    tx_instances.append(
+                        Transaction(
+                            account=bank_account,
+                            date=tx_data['date'],
+                            description=tx_data['description'],
+                            amount=tx_data['amount'],
+                            balance=tx_data.get('balance'),
+                            category=tx_data.get('category', 'Uncategorized'),
+                            is_interbank=False
+                        )
+                    )
+                Transaction.objects.bulk_create(tx_instances)
+
+                # Calculate and update aggregates (temporary values before interbank processing)
+                update_account_aggregates(bank_account)
+
+                created_accounts.append(bank_account)
 
         upload.status = 'COMPLETED'
         upload.error_message = None
@@ -86,7 +101,7 @@ def process_statement(upload_id, user=None):
         # Trigger cross-account interbank matching and recalculate all summaries
         run_interbank_detection_for_upload(user=user)
         
-        return bank_account
+        return created_accounts
 
     except Exception as e:
         import traceback

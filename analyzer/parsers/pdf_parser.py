@@ -28,6 +28,14 @@ _GLOBAL_AI_CALL_SEMAPHORE = threading.Semaphore(
 )
 
 class PDFStatementParser(BaseParser):
+    @staticmethod
+    def _normalize_account_number(value):
+        """Digits-only form of an account number/tail, for matching the
+        same account across different formatting ('Acct Ending 9625' vs
+        '******9625' vs '9625')."""
+        digits = re.sub(r'\D', '', str(value or ''))
+        return digits or None
+    
     def parse(self):
         """
         AI-First Statement Parsing Pipeline.
@@ -87,7 +95,7 @@ class PDFStatementParser(BaseParser):
                             messages=messages_list,
                             # temperature=0.0,
                             response_format={"type": "json_object"},
-                            timeout=60
+                            timeout=90
                         )
                         return json.loads(response.choices[0].message.content)
                     except Exception as e:
@@ -122,6 +130,14 @@ class PDFStatementParser(BaseParser):
 
             meta_prompt = (
                 "Extract header metadata from these bank statement pages.\n"
+                "IMPORTANT — MULTIPLE ACCOUNTS: Some statements cover MORE THAN ONE bank account in a single "
+                "document (e.g. an 'Account Summary' box listing several rows like 'Acct Ending 9625' and "
+                "'Acct Ending 4940', each with its OWN 'DETAIL TRANSACTIONS BY DATE' section later in the "
+                "document). If you see more than one such account, list EVERY one of them in 'accounts' below, "
+                "each with ITS OWN account number and ITS OWN beginning/ending balance (found in that "
+                "account's own summary box, e.g. 'Previous Balance' / 'Ending Balance' near its transaction "
+                "section — NOT the primary account's numbers). Always include the primary/main account in this "
+                "list too, in addition to the flat 'account_number' field below.\n"
                 "JSON Schema:\n"
                 "{\n"
                 "  \"bank_name\": \"Bank Name\",\n"
@@ -130,7 +146,10 @@ class PDFStatementParser(BaseParser):
                 "  \"start_date\": \"YYYY-MM-DD or null\",\n"
                 "  \"end_date\": \"YYYY-MM-DD or null\",\n"
                 "  \"beginning_balance\": 1234.56,\n"
-                "  \"ending_balance\": 5678.90\n"
+                "  \"ending_balance\": 5678.90,\n"
+                "  \"accounts\": [\n"
+                "    {\"account_number\": \"9625\", \"beginning_balance\": 1234.56, \"ending_balance\": 5678.90}\n"
+                "  ]\n"
                 "}\n\n"
                 f"HEADER TEXT:\n{doc_header_text[:4000]}"
             )
@@ -143,10 +162,23 @@ class PDFStatementParser(BaseParser):
             except Exception as e:
                 meta_res = {}
 
-            if meta_res.get("bank_name") and meta_res.get("bank_name") != "Bank Name":
-                self.bank_name = meta_res.get("bank_name")
-            if meta_res.get("account_number") and meta_res.get("account_number") != "Account Number":
-                self.account_number = str(meta_res.get("account_number")).replace('-', '')
+            def _is_usable(value, placeholder, unknown_value):
+                if not value:
+                    return False
+                v = str(value).strip().lower()
+                return v not in ('', placeholder.lower(), unknown_value.lower(), 'null', 'none', 'n/a')
+
+            ai_bank_name = meta_res.get("bank_name")
+            if _is_usable(ai_bank_name, "Bank Name", "Unknown Bank"):
+                self.bank_name = ai_bank_name
+            elif self.bank_name == "Unknown Bank":
+                print(f"[DEBUG] Metadata extraction returned no usable bank_name ({ai_bank_name!r}); keeping regex-detected value ({self.bank_name!r})")
+
+            ai_account_number = meta_res.get("account_number")
+            if _is_usable(ai_account_number, "Account Number", "Unknown Account"):
+                self.account_number = str(ai_account_number).replace('-', '')
+            elif self.account_number == "Unknown Account":
+                print(f"[DEBUG] Metadata extraction returned no usable account_number ({ai_account_number!r}); keeping regex-detected value ({self.account_number!r})")
             if meta_res.get("account_holder"):
                 self.account_holder = meta_res.get("account_holder")
             
@@ -166,6 +198,17 @@ class PDFStatementParser(BaseParser):
                 self.start_date = parse_iso_date(meta_res.get("start_date"))
             if not self.end_date:
                 self.end_date = parse_iso_date(meta_res.get("end_date"))
+
+            self.detected_accounts = meta_res.get("accounts") or []
+            if not any(
+                self._normalize_account_number(a.get('account_number')) == self._normalize_account_number(self.account_number)
+                for a in self.detected_accounts
+            ):
+                self.detected_accounts.append({
+                    'account_number': self.account_number,
+                    'beginning_balance': self.beginning_balance,
+                    'ending_balance': self.ending_balance,
+                })
 
             # Pre-extract text and images sequentially to avoid pdfplumber thread-safety crashes (segfaults)
             page_data_list = []
@@ -228,10 +271,24 @@ class PDFStatementParser(BaseParser):
                 start_time = time.time()
                 print(f"[DEBUG] Starting AI extraction for page(s) {page_nums}")
 
+                account_list_hint = ", ".join(
+                    str(a.get('account_number')) for a in getattr(self, 'detected_accounts', []) if a.get('account_number')
+                ) or str(self.account_number)
+
                 tx_instruction = (
                     f"Extract ALL transaction line items from page(s) {page_nums} of this bank statement.\n"
                     "If multiple pages are included below, each is clearly marked with a '=== PAGE N ===' "
                     "header — extract transactions from EVERY page shown, not just the first one.\n"
+                    "MULTIPLE ACCOUNTS: This statement may cover more than one bank account "
+                    f"(known account numbers in this document: {account_list_hint}). Each account's transactions "
+                    "appear under their own 'Acct Ending XXXX (Continued)' / 'Account Title' / 'DETAIL "
+                    "TRANSACTIONS BY DATE' heading. For EVERY transaction, set 'account_number' to the account "
+                    "number shown in the nearest preceding such heading on the SAME page. If a page has no "
+                    f"account heading of its own, use the account from the most recent page that did: \"{self.account_number}\" "
+                    "as the default if nothing else applies. Never merge two different accounts' transactions "
+                    "under one account_number — a page switching from one account's detail section to another's "
+                    "(as can happen partway down a page) means transactions above and below that switch belong "
+                    "to DIFFERENT accounts.\n"
                     "CRITICAL SIGN RULE: 'amount' MUST be POSITIVE for deposits/credits/inflows, and NEGATIVE for debits/withdrawals/payments/fees.\n"
                     "SPECIAL RULE FOR CHECKS: If a page contains a 'CHECKS' or 'CHECK NUMBER' table, EVERY amount in that "
                     "table is a NEGATIVE outflow (money leaving the account) even though no minus sign is printed next to it. "
@@ -250,7 +307,8 @@ class PDFStatementParser(BaseParser):
                     "      \"description\": \"Full description text\",\n"
                     "      \"amount\": -150.00,\n"
                     "      \"balance\": 4500.00,\n"
-                    "      \"category\": \"Category name or null\"\n"
+                    "      \"category\": \"Category name or null\",\n"
+                    "      \"account_number\": \"9625\"\n"
                     "    }\n"
                     "  ]\n"
                     "}"
@@ -274,7 +332,8 @@ class PDFStatementParser(BaseParser):
                     ])
                 except Exception as page_err:
                     print(f"🛑 [DEBUG] ERROR on page(s) {page_nums}: {page_err}")
-                    return []
+                    raise
+                    # return []
 
                 chunk_transactions = []
                 for tx in tx_res.get("transactions", []):
@@ -292,7 +351,8 @@ class PDFStatementParser(BaseParser):
                         'description': desc_text,
                         'amount': amt_val,
                         'balance': bal_val,
-                        'category': cat_val
+                        'category': cat_val,
+                        'account_number': tx.get('account_number') or self.account_number
                     })
 
                 elapsed = time.time() - start_time
@@ -328,7 +388,7 @@ class PDFStatementParser(BaseParser):
             for tx in transactions:
                 is_check_like = tx['amount'] < 0 and check_desc_re.match(tx['description'] or '')
                 if is_check_like:
-                    key = (tx['date'], tx['amount'])
+                    key = (self._normalize_account_number(tx.get('account_number')), tx['date'], tx['amount'])
                     if key in seen_checks:
                         print(f"[DEBUG] Dropping duplicate check-image transaction: {tx['date']} {tx['amount']} '{tx['description']}'")
                         continue
@@ -347,24 +407,80 @@ class PDFStatementParser(BaseParser):
         if not self.end_date:
             self.end_date = transactions[-1]['date']
 
-        # Fallback balance derivation if ending/beginning balances were 0
-        if self.beginning_balance == Decimal("0.00") and transactions[0].get('balance') is not None:
-            self.beginning_balance = transactions[0]['balance'] - transactions[0]['amount']
-        if self.ending_balance == Decimal("0.00") and transactions[-1].get('balance') is not None:
-            self.ending_balance = transactions[-1]['balance']
+        # --- Split transactions by account -------------------------------
+        # A single PDF can cover more than one bank account (e.g. an
+        # "Account Summary" listing several "Acct Ending XXXX" rows, each
+        # with its own transaction detail section). Every extracted
+        # transaction was tagged above with the account_number the AI saw
+        # nearest to it; group by that (normalized) number so each account
+        # gets its own BankAccount/transaction set instead of everything
+        # being silently merged into the primary account.
+        primary_norm = self._normalize_account_number(self.account_number)
+        groups = {}
+        for tx in transactions:
+            acct_raw = tx.pop('account_number', None) or self.account_number
+            acct_norm = self._normalize_account_number(acct_raw) or primary_norm
+            grp = groups.setdefault(acct_norm, {'account_number': acct_raw, 'txs': []})
+            grp['txs'].append(tx)
 
-        account_meta = {
-            'bank_name': self.bank_name,
-            'account_number': self.account_number,
-            'account_holder': self.account_holder,
-            'currency': self.currency,
-            'start_date': self.start_date,
-            'end_date': self.end_date,
-            'beginning_balance': self.beginning_balance,
-            'ending_balance': self.ending_balance,
-        }
+        results = []
+        for acct_norm, grp in groups.items():
+            group_txs = sorted(grp['txs'], key=lambda x: x['date'])
+            if not group_txs:
+                continue
 
-        return account_meta, transactions
+            is_primary = (acct_norm == primary_norm)
+            detected = next(
+                (a for a in getattr(self, 'detected_accounts', [])
+                 if self._normalize_account_number(a.get('account_number')) == acct_norm),
+                None
+            )
+
+            if is_primary:
+                beginning_balance = self.beginning_balance
+                ending_balance = self.ending_balance
+                start_date = self.start_date
+                end_date = self.end_date
+            else:
+                beginning_balance = None
+                ending_balance = None
+                if detected and detected.get('beginning_balance') is not None:
+                    try:
+                        beginning_balance = Decimal(str(detected['beginning_balance']))
+                    except Exception:
+                        beginning_balance = None
+                if detected and detected.get('ending_balance') is not None:
+                    try:
+                        ending_balance = Decimal(str(detected['ending_balance']))
+                    except Exception:
+                        ending_balance = None
+                start_date = group_txs[0]['date']
+                end_date = group_txs[-1]['date']
+
+            # Fallback balance derivation from the transactions themselves
+            # if a beginning/ending balance still couldn't be determined
+            # (covers both the primary account when its header value was
+            # 0.00, and secondary accounts the AI didn't report balances for).
+            if (beginning_balance is None or beginning_balance == Decimal("0.00")) and group_txs[0].get('balance') is not None:
+                beginning_balance = group_txs[0]['balance'] - group_txs[0]['amount']
+            if (ending_balance is None or ending_balance == Decimal("0.00")) and group_txs[-1].get('balance') is not None:
+                ending_balance = group_txs[-1]['balance']
+            beginning_balance = beginning_balance if beginning_balance is not None else Decimal("0.00")
+            ending_balance = ending_balance if ending_balance is not None else Decimal("0.00")
+
+            account_meta = {
+                'bank_name': self.bank_name,
+                'account_number': grp['account_number'],
+                'account_holder': self.account_holder,
+                'currency': self.currency,
+                'start_date': start_date,
+                'end_date': end_date,
+                'beginning_balance': beginning_balance,
+                'ending_balance': ending_balance,
+            }
+            results.append((account_meta, group_txs))
+
+        return results
 
     def _parse_via_legacy_rules(self):
         """
@@ -450,7 +566,7 @@ class PDFStatementParser(BaseParser):
             self.start_date = sorted_txs[0]['date']
             self.end_date = sorted_txs[-1]['date']
 
-        account_meta = {
+            account_meta = {
             'bank_name': self.bank_name,
             'account_number': self.account_number,
             'account_holder': self.account_holder,
@@ -461,7 +577,11 @@ class PDFStatementParser(BaseParser):
             'ending_balance': self.ending_balance or Decimal('0.00'),
         }
 
-        return account_meta, transactions
+        # Legacy rule-based parser only ever handles a single account, but
+        # the caller (manager.py) now expects a list of (account_meta,
+        # transactions) pairs to support multi-account PDFs from the AI
+        # path — wrap this single result to match that interface.
+        return [(account_meta, transactions)]
 
     def _extract_metadata_from_text(self, text, first_page_text=None):
         lookup_text = first_page_text if first_page_text else text
