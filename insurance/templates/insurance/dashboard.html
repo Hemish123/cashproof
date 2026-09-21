@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ file_name }} - Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --ink: #12262E;
+            --muted: #5E6F76;
+            --paper: #F3F5F4;
+            --surface: #FFFFFF;
+            --line: #DCE2E0;
+            --teal: #0F766E;
+            --teal-soft: #E3F1EF;
+            --saffron: #E8A33D;
+            --saffron-soft: #FCF3E1;
+            --coral: #C8483E;
+            --display: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
+            --body: 'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: var(--body); background: var(--paper); color: var(--ink); line-height: 1.55; }
+        .wrap { max-width: 1240px; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
+        a:focus-visible, button:focus-visible, select:focus-visible { outline: 3px solid var(--saffron); outline-offset: 2px; }
+
+        /* top bar */
+        .topbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding-bottom: 1.25rem; border-bottom: 1px solid var(--line); }
+        .topbar .file { font-weight: 600; word-break: break-all; }
+        .topbar .when { color: var(--muted); font-size: .9rem; }
+        .actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+        .btn { font: inherit; font-weight: 500; font-size: .9rem; padding: .55rem 1.1rem; border-radius: 6px; border: 1px solid var(--ink); background: transparent; color: var(--ink); text-decoration: none; cursor: pointer; }
+        .btn:hover { background: var(--ink); color: #fff; }
+        .btn.primary { background: var(--teal); border-color: var(--teal); color: #fff; }
+        .btn.primary:hover { background: #0B5C56; border-color: #0B5C56; }
+
+        /* hero */
+        .hero { display: grid; grid-template-columns: 1fr; gap: 1.5rem; padding: 2.5rem 0 2rem; }
+        @media (min-width: 900px) { .hero { grid-template-columns: 2fr 1fr; align-items: end; gap: 3rem; } }
+        .hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(1.9rem, 3.6vw, 2.9rem); line-height: 1.12; letter-spacing: -.02em; max-width: 24ch; }
+        .hero .domain { font-family: var(--display); font-weight: 500; color: var(--teal); font-size: 1.1rem; margin-bottom: .6rem; }
+        .facts { display: flex; gap: 2.5rem; }
+        .facts div { border-left: 3px solid var(--saffron); padding-left: .9rem; }
+        .facts strong { display: block; font-family: var(--display); font-size: 1.9rem; line-height: 1.1; }
+        .facts span { color: var(--muted); font-size: .9rem; }
+
+        /* KPI strip: one continuous band, not separate cards */
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        .kpi { padding: 1.3rem 1.4rem; border-left: 1px solid var(--line); border-top: 1px solid var(--line); margin: -1px 0 0 -1px; }
+        .kpi .v { font-family: var(--display); font-weight: 700; font-size: clamp(1.4rem, 2.2vw, 1.9rem); line-height: 1.15; word-break: break-word; }
+        .kpi .l { color: var(--muted); font-size: .88rem; margin-top: .3rem; }
+        .kpi:nth-child(4n+1) .v { color: var(--teal); }
+
+        /* sections */
+        h2 { font-family: var(--display); font-size: 1.35rem; font-weight: 700; letter-spacing: -.01em; }
+        .section { margin-top: 3rem; }
+        .section > .lead { color: var(--muted); font-size: .95rem; margin: .25rem 0 1.25rem; }
+
+        .charts { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+        @media (min-width: 900px) { .charts { grid-template-columns: 1fr 1fr; } .charts .panel:first-child { grid-column: 1 / -1; } }
+        .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1.25rem 1.4rem 1.4rem; break-inside: avoid; }
+        .panel-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .panel-head h3 { font-family: var(--display); font-size: 1.05rem; font-weight: 700; }
+        .tools { display: flex; gap: .4rem; }
+        .tools select, .tools button { font: inherit; font-size: .82rem; padding: .3rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); cursor: pointer; }
+        .tools select:hover, .tools button:hover { border-color: var(--teal); }
+        .canvas-box { position: relative; height: 320px; }
+        .charts .panel:first-child .canvas-box { height: 380px; }
+
+        .two { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+        @media (min-width: 900px) { .two { grid-template-columns: 3fr 2fr; } }
+        .insights { list-style: none; }
+        .insights li { padding: .85rem 0 .85rem 1.1rem; border-left: 3px solid var(--teal); margin-bottom: .75rem; background: linear-gradient(90deg, var(--teal-soft), transparent 70%); font-size: .97rem; }
+        .quality { list-style: none; }
+        .quality li { padding: .75rem 1rem; margin-bottom: .6rem; background: var(--saffron-soft); border-left: 3px solid var(--saffron); border-radius: 0 6px 6px 0; font-size: .93rem; }
+        .quality li.ok { background: var(--teal-soft); border-left-color: var(--teal); }
+
+        /* tables */
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .88rem; background: var(--surface); }
+        th, td { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+        th { font-weight: 600; background: #EAEFED; position: sticky; top: 0; }
+        td.num { font-variant-numeric: tabular-nums; }
+        .bar { display: inline-block; width: 90px; height: 6px; background: var(--line); border-radius: 3px; vertical-align: middle; margin-right: .5rem; overflow: hidden; }
+        .bar i { display: block; height: 100%; background: var(--coral); }
+        .empty { padding: 2rem; background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+
+        @media print {
+            .actions, .tools { display: none; }
+            body { background: #fff; }
+            .wrap { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+
+    <div class="topbar">
+        <div>
+            <div class="file">{{ file_name }}</div>
+            <div class="when">Analyzed on {{ uploaded_at|date:"d M Y, H:i" }}</div>
+        </div>
+        <div class="actions">
+            <button class="btn" onclick="window.print()">Save as PDF</button>
+            <a class="btn primary" href="{% url 'insurance_upload' %}">Upload new file</a>
+        </div>
+    </div>
+
+    <header class="hero">
+        <div>
+            {% if analysis.domain %}<div class="domain">{{ analysis.domain }}</div>{% endif %}
+            <h1>{{ analysis.summary|default:"Here is what your data shows." }}</h1>
+        </div>
+        <!-- {% if analysis.totalRows %}
+        <div class="facts">
+            <div><strong>{{ analysis.totalRows }}</strong><span>records</span></div>
+            <div><strong>{{ analysis.columns|length }}</strong><span>columns</span></div>
+        </div>
+        {% endif %} -->
+    </header>
+
+    {% if analysis.metrics %}
+    <section class="kpis" aria-label="Key numbers">
+        {% for metric in analysis.metrics %}
+        <div class="kpi">
+            <div class="v">{{ metric.value }}</div>
+            <div class="l">{{ metric.label }}</div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="section">
+        <h2>Charts</h2>
+        <p class="lead">Switch a chart's type or download it as an image.</p>
+        {% if analysis.charts %}
+        <div class="charts" id="charts"></div>
+        {% else %}
+        <div class="empty">No chart could be built from this file. Check that it has a header row and at least one column with repeating values, such as policy type or status.</div>
+        {% endif %}
+    </section>
+
+    <section class="section two">
+        <div>
+            <h2>What stands out</h2>
+            <p class="lead">Findings calculated from every row in your file.</p>
+            {% if analysis.insights %}
+            <ul class="insights">
+                {% for i in analysis.insights %}<li>{{ i }}</li>{% endfor %}
+            </ul>
+            {% else %}
+            <div class="empty">No findings were returned for this file.</div>
+            {% endif %}
+        </div>
+        <div>
+            <h2>Data quality</h2>
+            <p class="lead">Issues that can affect how far you can trust the numbers.</p>
+            <ul class="quality">
+                {% for q in analysis.dataQuality %}<li>{{ q }}</li>
+                {% empty %}<li class="ok">No data quality problems found.</li>{% endfor %}
+            </ul>
+        </div>
+    </section>
+
+</div>
+
+{% if analysis.charts %}
+{{ analysis.charts|json_script:"charts-data" }}
+<script>
+(function () {
+    var defs = JSON.parse(document.getElementById('charts-data').textContent);
+    var PALETTE = ['#0F766E', '#E8A33D', '#C8483E', '#2F4B7C', '#7FB069', '#7B4B94', '#4EA5D9', '#B08968', '#5E6F76', '#D98CB3'];
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var instances = [];
+
+    Chart.defaults.font.family = "'Instrument Sans', system-ui, sans-serif";
+    Chart.defaults.color = '#5E6F76';
+    Chart.defaults.borderColor = '#E6EBE9';
+    if (reduceMotion) { Chart.defaults.animation = false; }
+
+    function fmt(v) { return Number(v).toLocaleString('en-IN'); }
+    function short(label) { return label.length > 18 ? label.slice(0, 17) + '\u2026' : label; }
+
+    function makeConfig(def, kind) {
+        var round = (kind === 'pie' || kind === 'doughnut');
+        var horizontal = (kind === 'barh');
+        var type = horizontal ? 'bar' : kind;
+
+        var datasets = def.datasets.map(function (ds, i) {
+            var base = PALETTE[i % PALETTE.length];
+            var single = def.datasets.length === 1;
+            var o = { label: ds.label, data: ds.data };
+            if (round) {
+                o.backgroundColor = def.labels.map(function (_, j) { return PALETTE[j % PALETTE.length]; });
+                o.borderColor = '#fff';
+                o.borderWidth = 2;
+            } else if (type === 'line') {
+                o.borderColor = base; o.backgroundColor = base + '22';
+                o.fill = single; o.tension = 0.3; o.pointRadius = 3; o.borderWidth = 2.5;
+            } else {
+                o.backgroundColor = base; o.borderRadius = 4; o.maxBarThickness = 56;
+            }
+            return o;
+        });
+
+        var options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: horizontal ? 'y' : 'x',
+            plugins: {
+                legend: { display: round || def.datasets.length > 1, position: round ? 'right' : 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            var v = (typeof ctx.parsed === 'number') ? ctx.parsed : (horizontal ? ctx.parsed.x : ctx.parsed.y);
+                            var text = (round ? ctx.label : ctx.dataset.label) + ': ' + fmt(v);
+                            if (round) {
+                                var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+                                text += ' (' + (v * 100 / total).toFixed(1) + '%)';
+                            }
+                            return text;
+                        }
+                    }
+                }
+            }
+        };
+
+        if (!round) {
+            var valueAxis = { beginAtZero: true, ticks: { callback: function (v) { return fmt(v); } } };
+            var labelAxis = { grid: { display: false }, ticks: { callback: function (v) { return short(this.getLabelForValue(v)); } } };
+            options.scales = horizontal ? { x: valueAxis, y: labelAxis } : { x: labelAxis, y: valueAxis };
+        }
+        return { type: type, data: { labels: def.labels, datasets: datasets }, options: options };
+    }
+
+    function initialKind(def) { return def.type === 'bar' ? 'bar' : def.type; }
+
+    var host = document.getElementById('charts');
+    defs.forEach(function (def, idx) {
+        var panel = document.createElement('div');
+        panel.className = 'panel';
+
+        var head = document.createElement('div');
+        head.className = 'panel-head';
+        var title = document.createElement('h3');
+        title.textContent = def.title;
+
+        var tools = document.createElement('div');
+        tools.className = 'tools';
+        var select = document.createElement('select');
+        select.setAttribute('aria-label', 'Chart type for ' + def.title);
+        [['bar', 'Bar'], ['barh', 'Horizontal bar'], ['line', 'Line'], ['pie', 'Pie'], ['doughnut', 'Doughnut']].forEach(function (o) {
+            var opt = document.createElement('option');
+            opt.value = o[0]; opt.textContent = o[1];
+            select.appendChild(opt);
+        });
+        select.value = initialKind(def);
+        var dl = document.createElement('button');
+        dl.type = 'button'; dl.textContent = 'Download image';
+        tools.appendChild(select); tools.appendChild(dl);
+        head.appendChild(title); head.appendChild(tools);
+
+        var box = document.createElement('div');
+        box.className = 'canvas-box';
+        var canvas = document.createElement('canvas');
+        box.appendChild(canvas);
+        panel.appendChild(head); panel.appendChild(box);
+        host.appendChild(panel);
+
+        instances[idx] = new Chart(canvas.getContext('2d'), makeConfig(def, select.value));
+
+        select.addEventListener('change', function () {
+            instances[idx].destroy();
+            instances[idx] = new Chart(canvas.getContext('2d'), makeConfig(def, select.value));
+        });
+        dl.addEventListener('click', function () {
+            var a = document.createElement('a');
+            a.href = instances[idx].toBase64Image('image/png', 1);
+            a.download = def.title.replace(/[^a-z0-9]+/gi, '_') + '.png';
+            a.click();
+        });
+    });
+})();
+</script>
+{% endif %}
+</body>
+</html>

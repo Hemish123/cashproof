@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Insurance Data</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --secondary: #10B981;
+            --background: #F3F4F6;
+            --surface: #FFFFFF;
+            --text-main: #111827;
+            --text-muted: #6B7280;
+            --border: #E5E7EB;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--background); color: var(--text-main); line-height: 1.5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+        .upload-container { background: var(--surface); border-radius: var(--radius); padding: 3rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); text-align: center; max-width: 600px; width: 100%; border: 1px solid var(--border); }
+        h1 { font-size: 2.2rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
+        p.subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+        .file-label { display: block; background: var(--background); color: var(--text-main); padding: 1.5rem; border-radius: var(--radius); border: 2px dashed var(--primary); cursor: pointer; font-weight: 500; transition: all 0.2s; margin-bottom: 1.5rem; }
+        .file-label:hover { background: #EEF2FF; }
+        input[type="file"] { display: none; }
+        .btn-submit { background: var(--primary); color: white; border: none; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; border-radius: var(--radius); cursor: pointer; transition: background 0.2s; width: 100%; }
+        .btn-submit:hover { background: var(--primary-hover); }
+        .loading { display: none; margin-top: 1rem; color: var(--primary); font-weight: 500; }
+        .error-message { background: #FEE2E2; color: #B91C1C; padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <h1>Insurance Data Analysis</h1>
+        
+        {% if error %}
+            <div class="error-message">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
+            {% csrf_token %}
+            <label for="excel_file" class="file-label" id="file-label-text">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 10px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><br>
+                Click to Browse Excel File
+            </label>
+            <input type="file" name="excel_file" id="excel_file" accept=".xlsx, .xls, .csv" required>
+            <button type="submit" class="btn-submit" id="submitBtn">Analyze Data</button>
+            <div class="loading" id="loadingIndicator">Analyzing data with AI... Please wait.</div>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('excel_file').addEventListener('change', function(e) {
+            var fileName = e.target.files[0].name;
+            document.getElementById('file-label-text').innerHTML = 'Selected File: <strong>' + fileName + '</strong>';
+        });
+        document.getElementById('uploadForm').addEventListener('submit', function() {
+            document.getElementById('submitBtn').style.display = 'none';
+            document.getElementById('loadingIndicator').style.display = 'block';
+        });
+    </script>
+</body>
+</html>

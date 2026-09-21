@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'analyzer',
     'user_auth',
+    'insurance',
 ]
 
 MIDDLEWARE = [
