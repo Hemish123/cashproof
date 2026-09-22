@@ -113,7 +113,7 @@
     <header class="hero">
         <div>
             {% if analysis.domain %}<div class="domain">{{ analysis.domain }}</div>{% endif %}
-            <h1>{{ analysis.summary|default:"Here is what your data shows." }}</h1>
+            {% comment %} <h1>{{ analysis.summary|default:"Here is what your data shows." }}</h1> {% endcomment %}
         </div>
         <!-- {% if analysis.totalRows %}
         <div class="facts">
