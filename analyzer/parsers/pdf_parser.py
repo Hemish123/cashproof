@@ -138,6 +138,16 @@ class PDFStatementParser(BaseParser):
                 "account's own summary box, e.g. 'Previous Balance' / 'Ending Balance' near its transaction "
                 "section — NOT the primary account's numbers). Always include the primary/main account in this "
                 "list too, in addition to the flat 'account_number' field below.\n"
+                "IMPORTANT — FINDING THE TRUE ENDING BALANCE: Some reports (e.g. QuickBooks-style "
+                "'Reconciliation Detail' reports) include several subtotal lines near the end, such as "
+                "'Total Checks and Payments', 'Total Deposits and Credits', or 'Total Cleared Transactions'. "
+                "NONE of these is the ending balance — they are period totals, not account balances. The true "
+                "ending balance is ONLY the figure on a line explicitly labeled 'Ending Balance' (or 'Closing "
+                "Balance' / 'Register Balance as of <date>'), usually the very last such line in the document. "
+                "If that line shows two dollar amounts side by side, the account balance is the SECOND (right-"
+                "hand) one — the first is just that period's net change. Use the 'LAST PAGE OF DOCUMENT' text "
+                "below if provided; it is included specifically because the ending balance often only appears "
+                "there.\n"
                 "JSON Schema:\n"
                 "{\n"
                 "  \"bank_name\": \"Bank Name\",\n"
@@ -335,6 +345,8 @@ class PDFStatementParser(BaseParser):
                     raise
                     # return []
 
+                # print(f"[DEBUG] Raw AI Response for page(s) {page_nums}: {json.dumps(tx_res)}")
+
                 chunk_transactions = []
                 for tx in tx_res.get("transactions", []):
                     d_val = parse_iso_date(tx.get("date"))
@@ -396,25 +408,38 @@ class PDFStatementParser(BaseParser):
                 deduped.append(tx)
             transactions = deduped
 
+        # Empty transactions is only a real failure if metadata extraction
+        # also failed — meaning the AI likely couldn't read the document at
+        # all. A dormant account (just BEGINNING/ENDING BALANCE lines) is a
+        # valid, legitimate zero-transaction result and must still surface
+        # on the dashboard with its bank name / account number / balances,
+        # not get dropped or sent through the legacy parser.
+        metadata_looks_valid = (
+            self.account_number != "Unknown Account"
+            and self.bank_name != "Unknown Bank"
+        )
+        if not transactions and not metadata_looks_valid:
+            raise ValueError(
+                "AI extraction produced 0 transactions and no usable "
+                "metadata (bank_name/account_number) — treating as a "
+                "genuine failure."
+            )
         if not transactions:
-            raise ValueError("AI Page-by-Page extraction produced 0 transactions.")
+            print(f"[DEBUG] 0 transactions found, but metadata is valid "
+                f"(bank={self.bank_name}, acct={self.account_number}) — "
+                f"dormant-account statement, not a failure.")
 
         # Sort transactions by date
         transactions.sort(key=lambda x: x['date'])
 
-        if not self.start_date:
-            self.start_date = transactions[0]['date']
-        if not self.end_date:
-            self.end_date = transactions[-1]['date']
+        if transactions:
+            if not self.start_date:
+                self.start_date = transactions[0]['date']
+            if not self.end_date:
+                self.end_date = transactions[-1]['date']
+        # else: keep self.start_date/self.end_date as already set from meta_prompt
 
         # --- Split transactions by account -------------------------------
-        # A single PDF can cover more than one bank account (e.g. an
-        # "Account Summary" listing several "Acct Ending XXXX" rows, each
-        # with its own transaction detail section). Every extracted
-        # transaction was tagged above with the account_number the AI saw
-        # nearest to it; group by that (normalized) number so each account
-        # gets its own BankAccount/transaction set instead of everything
-        # being silently merged into the primary account.
         primary_norm = self._normalize_account_number(self.account_number)
         groups = {}
         for tx in transactions:
@@ -423,11 +448,18 @@ class PDFStatementParser(BaseParser):
             grp = groups.setdefault(acct_norm, {'account_number': acct_raw, 'txs': []})
             grp['txs'].append(tx)
 
+        # No transactions at all -> groups would be empty -> no account
+        # would ever reach the dashboard. Force the primary account through
+        # with its extracted metadata and an empty transaction list.
+        if not groups:
+            groups[primary_norm] = {'account_number': self.account_number, 'txs': []}
+
         results = []
         for acct_norm, grp in groups.items():
             group_txs = sorted(grp['txs'], key=lambda x: x['date'])
-            if not group_txs:
-                continue
+            # NOTE: removed the old `if not group_txs: continue` — that
+            # line (if present) is exactly what would silently drop a
+            # dormant account from the dashboard. Do not skip empty groups.
 
             is_primary = (acct_norm == primary_norm)
             detected = next(
@@ -454,16 +486,12 @@ class PDFStatementParser(BaseParser):
                         ending_balance = Decimal(str(detected['ending_balance']))
                     except Exception:
                         ending_balance = None
-                start_date = group_txs[0]['date']
-                end_date = group_txs[-1]['date']
+                start_date = group_txs[0]['date'] if group_txs else self.start_date
+                end_date = group_txs[-1]['date'] if group_txs else self.end_date
 
-            # Fallback balance derivation from the transactions themselves
-            # if a beginning/ending balance still couldn't be determined
-            # (covers both the primary account when its header value was
-            # 0.00, and secondary accounts the AI didn't report balances for).
-            if (beginning_balance is None or beginning_balance == Decimal("0.00")) and group_txs[0].get('balance') is not None:
+            if (beginning_balance is None or beginning_balance == Decimal("0.00")) and group_txs and group_txs[0].get('balance') is not None:
                 beginning_balance = group_txs[0]['balance'] - group_txs[0]['amount']
-            if (ending_balance is None or ending_balance == Decimal("0.00")) and group_txs[-1].get('balance') is not None:
+            if (ending_balance is None or ending_balance == Decimal("0.00")) and group_txs and group_txs[-1].get('balance') is not None:
                 ending_balance = group_txs[-1]['balance']
             beginning_balance = beginning_balance if beginning_balance is not None else Decimal("0.00")
             ending_balance = ending_balance if ending_balance is not None else Decimal("0.00")
