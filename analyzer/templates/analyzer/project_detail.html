@@ -355,8 +355,50 @@ function closeM(id){document.getElementById(id).classList.remove('active');}
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('active');});});
 function openEditAcct(id,bank,num,holder){if(document.getElementById('ea_bank'))document.getElementById('ea_bank').value=bank;if(document.getElementById('ea_number'))document.getElementById('ea_number').value=num;if(document.getElementById('ea_holder'))document.getElementById('ea_holder').value=holder;let base="{% url 'edit_account' project.id 999999 %}";document.getElementById('editAcctForm').action=base.replace('999999',id);openM('editAcctModal');}
 function triggerLoader(t,s){document.getElementById('ltitle').textContent=t;document.getElementById('lsub').textContent=s;document.getElementById('loading-overlay').style.display='flex';}
-function clearFileInput() { const fi = document.getElementById('file-upload-input'); if(fi) fi.value = ''; const el = document.getElementById('file-label'); if(el) el.style.display = 'none'; }
-const fi=document.getElementById('file-upload-input');if(fi)fi.addEventListener('change',function(){let el=document.getElementById('file-label');if(this.files&&this.files.length){el.innerHTML='<span>'+this.files.length+' file(s) selected: '+Array.from(this.files).map(f=>f.name).join(', ')+'</span> <a href="javascript:void(0)" onclick="clearFileInput()" style="color:var(--flag); text-decoration:none; font-weight:600; margin-left:12px; padding:2px 6px; border-radius:4px; border:1px solid rgba(160,99,26,0.3); background:var(--flag-bg);">Clear</a>';el.style.display='flex';el.style.justifyContent='space-between';el.style.alignItems='center';el.style.padding='8px 12px';el.style.background='var(--verified-bg)';el.style.border='1px solid rgba(30,110,82,0.2)';el.style.borderRadius='6px';}else el.style.display='none';});
+let selectedFiles = [];
+function updateFileInput() {
+  const dt = new DataTransfer();
+  selectedFiles.forEach(file => dt.items.add(file));
+  const fi = document.getElementById('file-upload-input');
+  if(fi) fi.files = dt.files;
+  renderFileLabels();
+}
+function renderFileLabels() {
+  let el = document.getElementById('file-label');
+  if(selectedFiles.length > 0) {
+    let html = '<div style="display:flex; flex-direction:column; gap:6px;">';
+    selectedFiles.forEach((file, index) => {
+      html += '<div style="display:flex; justify-content:space-between; align-items:center; background:var(--verified-bg); border:1px solid rgba(30,110,82,0.2); padding:6px 10px; border-radius:4px;">' +
+              '<span style="font-size:12px; color:var(--verified); word-break:break-all; padding-right:12px;">' + file.name + '</span>' +
+              '<a href="javascript:void(0)" onclick="removeFile(' + index + ')" style="color:var(--flag); text-decoration:none; font-weight:600; font-size:11px; flex-shrink:0;">Clear</a>' +
+              '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+    el.style.display = 'block';
+    el.style.padding = '0';
+    el.style.background = 'transparent';
+    el.style.border = 'none';
+  } else {
+    el.style.display = 'none';
+    el.innerHTML = '';
+  }
+}
+function removeFile(index) {
+  selectedFiles.splice(index, 1);
+  updateFileInput();
+}
+const fi = document.getElementById('file-upload-input');
+if(fi) {
+  fi.addEventListener('change', function() {
+    Array.from(this.files).forEach(f => {
+      if(!selectedFiles.find(existing => existing.name === f.name && existing.size === f.size)) {
+        selectedFiles.push(f);
+      }
+    });
+    updateFileInput();
+  });
+}
 function searchTbl(inId,tblId){let q=document.getElementById(inId).value.toUpperCase();document.getElementById(tblId).querySelectorAll('tbody tr').forEach(r=>{r.style.display=r.textContent.toUpperCase().includes(q)?'':'none';});}
 let proc=false;
 {% for u in uploads %}{% if u.status == "PENDING" or u.status == "PROCESSING" %}proc=true;{% endif %}{% endfor %}
