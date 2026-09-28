@@ -58,7 +58,10 @@ def process_batch_in_background(upload_ids, project_id=None):
 
 @login_required(login_url='login')
 def project_list_view(request):
-    projects = Project.objects.filter(user=request.user).order_by('-created_at')
+    from django.db.models import Prefetch
+    projects = Project.objects.filter(user=request.user).order_by('-created_at').prefetch_related(
+        Prefetch('bank_accounts', queryset=BankAccount.objects.filter(is_manual=True))
+    )
     
     if request.method == 'POST':
         form = ProjectForm(request.POST)
@@ -71,8 +74,8 @@ def project_list_view(request):
     else:
         form = ProjectForm()
 
-    total_accounts = sum(p.bank_accounts.count() for p in projects)
-    no_account_projects = sum(1 for p in projects if p.bank_accounts.count() == 0)
+    total_accounts = sum(len(p.bank_accounts.all()) for p in projects)
+    no_account_projects = sum(1 for p in projects if len(p.bank_accounts.all()) == 0)
 
     return render(request, 'analyzer/project_list.html', {
         'projects': projects,
@@ -84,7 +87,10 @@ def project_list_view(request):
 
 @login_required(login_url='login')
 def project_workspace_view(request):
-    projects = Project.objects.filter(user=request.user).order_by('-created_at')
+    from django.db.models import Prefetch
+    projects = Project.objects.filter(user=request.user).order_by('-created_at').prefetch_related(
+        Prefetch('bank_accounts', queryset=BankAccount.objects.filter(is_manual=True))
+    )
 
     if request.method == 'POST':
         form = ProjectForm(request.POST)
@@ -148,6 +154,7 @@ def project_detail_view(request, project_id):
             if account_form.is_valid():
                 account = account_form.save(commit=False)
                 account.project = project
+                account.is_manual = True
                 account.save()
                 messages.success(request, "Bank account registered successfully.")
                 return redirect('project_detail', project_id=project.id)
@@ -344,7 +351,7 @@ def edit_account_view(request, project_id, account_id):
 @login_required(login_url='login')
 def download_report_view(request, project_id):
     project = get_object_or_404(Project, id=project_id, user=request.user)
-    accounts = BankAccount.objects.filter(project=project).order_by('bank_name')
+    accounts = BankAccount.objects.filter(project=project, upload__isnull=False).order_by('bank_name')
 
     if not accounts.exists():
         messages.warning(request, "No processed bank statements available to generate report.")
@@ -383,3 +390,52 @@ def upload_status_api(request, project_id):
         status__in=['PENDING', 'PROCESSING']
     ).exists()
     return JsonResponse({'is_processing': is_processing})
+
+@login_required(login_url='login')
+def bank_account_list_view(request):
+    projects = Project.objects.filter(user=request.user)
+    
+    if request.method == 'POST':
+        if 'add_account' in request.POST:
+            project_id = request.POST.get('project_id')
+            if not project_id:
+                messages.error(request, "You must select a project.")
+                return redirect('bank_account_list')
+                
+            project = get_object_or_404(Project, id=project_id, user=request.user)
+            form = BankAccountForm(request.POST)
+            if form.is_valid():
+                account = form.save(commit=False)
+                account.project = project
+                account.is_manual = True
+                account.save()
+                messages.success(request, "Bank account added successfully.")
+            else:
+                messages.error(request, "Error adding bank account.")
+            return redirect('bank_account_list')
+            
+        elif 'edit_account' in request.POST:
+            account_id = request.POST.get('account_id')
+            account = get_object_or_404(BankAccount, id=account_id, project__user=request.user)
+            form = BankAccountForm(request.POST, instance=account)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Bank account updated successfully.")
+            else:
+                messages.error(request, "Error updating bank account.")
+            return redirect('bank_account_list')
+            
+        elif 'delete_account' in request.POST:
+            account_id = request.POST.get('account_id')
+            account = get_object_or_404(BankAccount, id=account_id, project__user=request.user)
+            account.delete()
+            messages.success(request, "Bank account deleted successfully.")
+            return redirect('bank_account_list')
+
+    accounts = BankAccount.objects.filter(project__user=request.user, is_manual=True).select_related('project').order_by('bank_name')
+    
+    return render(request, 'analyzer/bank_account_list.html', {
+        'accounts': accounts,
+        'projects': projects,
+    })
+

@@ -1,36 +1,15 @@
+{% extends 'analyzer/base.html' %}
 {% load custom_filters %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>{{ project.name }} -- Cash Proof</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-:root{--paper:#FAFAF8;--panel:#FFF;--panel-alt:#F2F1EA;--ink:#151F35;--ink-2:#414B60;--muted:#767F8E;--line:#DEDCD1;--line-soft:#EAE8DD;--verified:#1E6E52;--verified-bg:#E6F1EC;--flag:#A0631A;--flag-bg:#FBF0DE;--accent:#7A2A2E;--accent-bg:#F5E9E8;--sidebar-bg:#141C2E;--sidebar-hover:#1E2A42;--sidebar-active:#253350;--sidebar-text:#A8B3C8;--sidebar-text-active:#E8ECF4;--radius:8px;box-sizing:border-box}
-*{box-sizing:inherit;margin:0;padding:0}html,body{min-height:100%;height:100%}
-body{background:var(--paper);color:var(--ink-2);font-family:"IBM Plex Sans",Arial,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;display:flex}
-a{color:inherit;text-decoration:none}button,input{font-family:inherit}
-h1,h2,h3{font-family:"Source Serif 4",Georgia,serif;color:var(--ink);margin:0;font-weight:600}svg{display:block}
-.sidebar{width:168px;min-height:100vh;background:var(--sidebar-bg);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;z-index:100}
-.sidebar-brand{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:9px}
-.sidebar-mark{width:28px;height:28px;border:1.5px solid var(--accent);border-radius:5px;display:grid;place-items:center;flex-shrink:0;background:rgba(122,42,46,0.12)}
-.sidebar-brand-name{font-family:"Source Serif 4";font-size:15px;font-weight:600;color:#E8ECF4}
-.sidebar-brand-sub{font-size:10px;color:var(--sidebar-text);margin-top:1px}
-.sidebar-nav{padding:12px 0;flex:1}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--sidebar-text);font-size:13px;font-weight:500;transition:background .15s,color .15s;position:relative;text-decoration:none}
-.nav-item:hover{background:var(--sidebar-hover);color:var(--sidebar-text-active)}
-.nav-item.active{background:var(--sidebar-active);color:var(--sidebar-text-active)}
-.nav-item.active::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
-.nav-item svg{flex-shrink:0;opacity:.7}.nav-item.active svg{opacity:1}
-.nav-badge{margin-left:auto;background:rgba(255,255,255,.1);color:var(--sidebar-text);font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:100px}
-.sidebar-footer{padding:14px 16px;border-top:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:9px}
-.sidebar-avatar{width:26px;height:26px;border-radius:50%;background:var(--sidebar-active);color:#D9DCE6;display:grid;place-items:center;font-size:11px;font-weight:600;flex-shrink:0;border:1px solid rgba(255,255,255,.12)}
-.sidebar-username{font-size:12px;color:var(--sidebar-text-active);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sidebar-logout{font-size:11px;color:var(--sidebar-text);transition:color .15s}.sidebar-logout:hover{color:#E8ECF4}
-.main-content{margin-left:168px;flex:1;min-height:100vh;display:flex;flex-direction:column;width:100%}
+{% block title %}{{ project.name }} -- Cash Proof{% endblock %}
+
+{% block nav_dashboard_class %}{% endblock %}
+{% block nav_workspace_class %}active{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block extra_css %}
 .breadcrumb{padding:11px 28px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex-shrink:0}
 .breadcrumb a:hover{color:var(--accent)}.bc-cur{color:var(--ink);font-weight:500}
 .page-header{padding:20px 28px 0;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;background:var(--panel);flex-shrink:0}
@@ -121,43 +100,10 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
 .dropzone-title{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px}.dropzone-hint{font-size:12.5px;color:var(--muted)}
 .dropzone input[type=file]{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
-</style>
-</head>
-<body>
+{% endblock %}
 
-<div id="loading-overlay">
-  <div class="spinner"></div>
-  <div class="ltitle" id="ltitle">Analyzing Statements</div>
-  <div class="lsub" id="lsub">Parsing transactions, standardizing data...</div>
-</div>
-
-<aside class="sidebar">
-  <div class="sidebar-brand">
-    <div class="sidebar-mark"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8.5L6 12L14 3" stroke="#7A2A2E" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-    <div><div class="sidebar-brand-name">Cash Proof</div><div class="sidebar-brand-sub">Interbank &amp; cash reconciliation</div></div>
-  </div>
-  <nav class="sidebar-nav">
-    <a href="{% url 'project_list' %}" class="nav-item" id="nav-dashboard">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard
-    </a>
-    <a href="{% url 'project_workspace' %}" class="nav-item active" id="nav-workspace">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Project Workspace
-    </a>
-    <!-- <a href="{% url 'project_list' %}" class="nav-item" id="nav-bank">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Bank Accounts
-    </a> -->
-  </nav>
-  <div class="sidebar-footer">
-    <div class="sidebar-avatar">{{ request.user.username|slice:":1"|upper }}</div>
-    <div style="flex:1;min-width:0">
-      <div class="sidebar-username">{{ request.user.username }}</div>
-      <a href="{% url 'logout' %}" class="sidebar-logout" id="logout-btn">Log out</a>
-    </div>
-  </div>
-</aside>
-
-<div class="main-content">
-  <div class="breadcrumb">
+{% block content %}
+<div class="breadcrumb">
     <a href="{% url 'project_list' %}">Dashboard</a>
     <span style="color:var(--line);margin:0 2px">&#8250;</span>
     <a href="{% url 'project_workspace' %}">Project Workspace</a>
@@ -167,7 +113,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
   <div class="page-header">
     <div>
       <h1>{{ project.name }}</h1>
-      <div class="page-header-meta">Client: <a href="#">{{ project.client_name|default:"--" }}</a>&nbsp;&nbsp;{{ manual_accounts.count }} bank account{{ manual_accounts.count|pluralize }} mapped</div>
+      <div class="page-header-meta">{{ manual_accounts.count }} bank account{{ manual_accounts.count|pluralize }} mapped</div>
     </div>
     <div class="page-header-actions">
       <a href="{% url 'download_report' project.id %}" class="btn" id="download-excel-btn">
@@ -191,10 +137,10 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
   <!-- TAB: Project & accounts -->
   <div class="tab-content active" id="content-proj">
     <div class="panel">
-      <div class="panel-head"><h2>Project &amp; client details</h2></div>
+      <div class="panel-head"><h2>Project details</h2></div>
       <div class="detail-grid">
         <div class="detail-cell"><div class="detail-label">Project name</div><div class="detail-value">{{ project.name }}</div></div>
-        <div class="detail-cell"><div class="detail-label">Client name</div><div class="detail-value accent">{{ project.client_name|default:"--" }}</div></div>
+        <!-- <div class="detail-cell"><div class="detail-label">Client name</div><div class="detail-value accent">{{ project.client_name|default:"--" }}</div></div> -->
       </div>
     </div>
     <div class="panel">
@@ -206,7 +152,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
             <div class="aa-badge">{{ acc.bank_name|slice:":2"|upper }}</div>
             <div>
               <div class="aa-name">{{ acc.bank_name }} &ndash; Account ending {{ acc.account_number|slice:"-4:" }}</div>
-              <div class="aa-sub">{% if acc.account_holder %}{{ acc.account_holder }} &middot; {% endif %}under <a href="#">{{ project.name }}</a> / <a href="#">{{ project.client_name|default:"--" }}</a></div>
+              <div class="aa-sub">{% if acc.account_holder %}{{ acc.account_holder }} &middot; {% endif %}under <a href="#">{{ project.name }}</a></div>
             </div>
           </div>
           <div class="row-act">
@@ -318,11 +264,16 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
     <div class="modal-head"><h2>Add statements</h2><button type="button" class="modal-close" onclick="closeM('addStmtModal')">&#x2715;</button></div>
     <p class="modal-hint">Upload statements for the bank accounts mapped to {{ project.name }}.</p>
     {% if uploads %}
-    <div style="margin-bottom:14px;font-size:12.5px;color:var(--ink-2);background:var(--panel-alt);padding:10px 14px;border-radius:6px;border:1px solid var(--line);max-height:100px;overflow-y:auto;">
-      <strong style="display:block;margin-bottom:4px">Already uploaded:</strong>
-      <ul style="margin:0;padding-left:18px;color:var(--muted);font-size:12px;word-break:break-all;">
-        {% for u in uploads %}<li>{{ u.filename }}</li>{% endfor %}
-      </ul>
+    <div style="margin-bottom:14px;font-size:12.5px;color:var(--ink-2);background:var(--panel-alt);padding:10px 14px;border-radius:6px;border:1px solid var(--line);max-height:150px;overflow-y:auto;">
+      <strong style="display:block;margin-bottom:8px">Uploaded statements:</strong>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        {% for u in uploads %}
+        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--panel); padding:6px 10px; border-radius:4px; border:1px solid var(--line);">
+          <div style="font-size:12px; color:var(--muted); word-break:break-all; padding-right:12px;">{{ u.filename }}</div>
+          <a href="{% url 'delete_upload' project.id u.id %}" onclick="return confirm('Remove this statement and all its parsed transactions?');" style="color:var(--flag); font-size:11px; font-weight:600; text-decoration:none; flex-shrink:0;">Delete</a>
+        </div>
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
     <form method="POST" enctype="multipart/form-data" id="upload-form" onsubmit="triggerLoader('Analyzing statements','Extracting transactions, standardizing data...')">
@@ -347,7 +298,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
   <div class="modal-box">
     <div class="modal-head"><h2>Add bank account</h2><button type="button" class="modal-close" onclick="closeM('addAcctModal')">&#x2715;</button></div>
     <form method="POST">{% csrf_token %}
-      <div class="field"><label>Account holder name</label><input type="text" name="account_holder" placeholder="Full name on the account"></div>
+      <!-- <div class="field"><label>Account holder name</label><input type="text" name="account_holder" placeholder="Full name on the account"></div> -->
       <div class="field"><label>Bank name <span style="color:var(--accent)">*</span></label><input type="text" name="bank_name" placeholder="e.g. First National" required></div>
       <div class="field"><label>Account number <span style="color:var(--accent)">*</span></label><input type="text" name="account_number" placeholder="Full account number" required></div>
       <div class="modal-actions"><button type="button" class="btn" onclick="closeM('addAcctModal')">Cancel</button><button type="submit" name="add_account" class="btn primary" id="save-acct-btn">Add account</button></div>
@@ -360,7 +311,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
   <div class="modal-box">
     <div class="modal-head"><h2>Edit bank account</h2><button type="button" class="modal-close" onclick="closeM('editAcctModal')">&#x2715;</button></div>
     <form method="POST" id="editAcctForm">{% csrf_token %}
-      <div class="field"><label>Account holder name</label><input type="text" name="account_holder" id="ea_holder"></div>
+      <!-- <div class="field"><label>Account holder name</label><input type="text" name="account_holder" id="ea_holder"></div> -->
       <div class="field"><label>Bank name *</label><input type="text" name="bank_name" id="ea_bank" required></div>
       <div class="field"><label>Account number *</label><input type="text" name="account_number" id="ea_number" required></div>
       <div class="modal-actions"><button type="button" class="btn" onclick="closeM('editAcctModal')">Cancel</button><button type="submit" class="btn primary" id="save-edit-acct-btn">Save changes</button></div>
@@ -374,11 +325,19 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
     <div class="modal-head"><h2>Edit project</h2><button type="button" class="modal-close" onclick="closeM('editProjModal')">&#x2715;</button></div>
     <form method="POST" action="{% url 'project_detail' project.id %}">{% csrf_token %}
       <div class="field"><label>Project name *</label><input type="text" name="name" value="{{ project.name }}" required></div>
-      <div class="field"><label>Client name</label><input type="text" name="client_name" value="{{ project.client_name|default:'' }}"></div>
+      <!-- <div class="field"><label>Client name</label><input type="text" name="client_name" value="{{ project.client_name|default:'' }}"></div> -->
       <div class="modal-actions"><button type="button" class="btn" onclick="closeM('editProjModal')">Cancel</button><button type="submit" name="update_project" class="btn primary">Save changes</button></div>
     </form>
   </div>
 </div>
+
+<!-- Full-screen Loading Overlay -->
+<div id="loading-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(21,31,53,0.7);z-index:9999;flex-direction:column;justify-content:center;align-items:center;color:#fff;backdrop-filter:blur(2px);">
+  <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,0.2);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;"></div>
+  <h2 id="ltitle" style="font-family:'Source Serif 4';font-size:20px;margin-bottom:8px;font-weight:600;">Analyzing statements</h2>
+  <p id="lsub" style="font-size:14px;color:rgba(255,255,255,0.8);">Extracting transactions, standardizing data...</p>
+</div>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
 <script>
 let myChart = null;
@@ -394,9 +353,10 @@ function switchTab(n){
 function openM(id){document.getElementById(id).classList.add('active');}
 function closeM(id){document.getElementById(id).classList.remove('active');}
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('active');});});
-function openEditAcct(id,bank,num,holder){document.getElementById('ea_bank').value=bank;document.getElementById('ea_number').value=num;document.getElementById('ea_holder').value=holder;let base="{% url 'edit_account' project.id 999999 %}";document.getElementById('editAcctForm').action=base.replace('999999',id);openM('editAcctModal');}
+function openEditAcct(id,bank,num,holder){if(document.getElementById('ea_bank'))document.getElementById('ea_bank').value=bank;if(document.getElementById('ea_number'))document.getElementById('ea_number').value=num;if(document.getElementById('ea_holder'))document.getElementById('ea_holder').value=holder;let base="{% url 'edit_account' project.id 999999 %}";document.getElementById('editAcctForm').action=base.replace('999999',id);openM('editAcctModal');}
 function triggerLoader(t,s){document.getElementById('ltitle').textContent=t;document.getElementById('lsub').textContent=s;document.getElementById('loading-overlay').style.display='flex';}
-const fi=document.getElementById('file-upload-input');if(fi)fi.addEventListener('change',function(){let el=document.getElementById('file-label');if(this.files&&this.files.length){el.textContent=this.files.length+' file(s) selected: '+Array.from(this.files).map(f=>f.name).join(', ');el.style.display='block';}else el.style.display='none';});
+function clearFileInput() { const fi = document.getElementById('file-upload-input'); if(fi) fi.value = ''; const el = document.getElementById('file-label'); if(el) el.style.display = 'none'; }
+const fi=document.getElementById('file-upload-input');if(fi)fi.addEventListener('change',function(){let el=document.getElementById('file-label');if(this.files&&this.files.length){el.innerHTML='<span>'+this.files.length+' file(s) selected: '+Array.from(this.files).map(f=>f.name).join(', ')+'</span> <a href="javascript:void(0)" onclick="clearFileInput()" style="color:var(--flag); text-decoration:none; font-weight:600; margin-left:12px; padding:2px 6px; border-radius:4px; border:1px solid rgba(160,99,26,0.3); background:var(--flag-bg);">Clear</a>';el.style.display='flex';el.style.justifyContent='space-between';el.style.alignItems='center';el.style.padding='8px 12px';el.style.background='var(--verified-bg)';el.style.border='1px solid rgba(30,110,82,0.2)';el.style.borderRadius='6px';}else el.style.display='none';});
 function searchTbl(inId,tblId){let q=document.getElementById(inId).value.toUpperCase();document.getElementById(tblId).querySelectorAll('tbody tr').forEach(r=>{r.style.display=r.textContent.toUpperCase().includes(q)?'':'none';});}
 let proc=false;
 {% for u in uploads %}{% if u.status == "PENDING" or u.status == "PROCESSING" %}proc=true;{% endif %}{% endfor %}
@@ -408,5 +368,4 @@ myChart = new Chart(ctx,{type:'bar',data:{labels:{{ monthly_labels|safe }},datas
 const hm={'#cashflow':'cashflow','#documents':'docs','#ledger':'ledger','#interbank':'interbank','#exceptions':'exceptions'};
 if(hm[location.hash])switchTab(hm[location.hash]);
 </script>
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,231 @@
+{% extends 'analyzer/base.html' %}
+{% block title %}Bank Accounts -- Cash Proof{% endblock %}
+{% block description %}All bank accounts in the system.{% endblock %}
+
+{% block nav_bank_class %}active{% endblock %}
+
+{% block extra_css %}
+.page-wrap{padding:30px 32px 60px;width:100%;box-sizing:border-box;}
+.page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;}
+.page-header h1{font-size:22px;}
+.page-header-sub{font-size:13px;color:var(--muted);margin-top:4px;margin-bottom:20px;}
+.header-actions{display:flex;align-items:center;gap:8px;}
+
+.btn{font-size:13px;font-weight:500;padding:8px 14px;border-radius:6px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none;}
+.btn:hover{border-color:var(--ink-2);}
+.btn.primary{background:var(--ink);color:#F3F1E8;border-color:var(--ink);}
+.btn.primary:hover{background:#0F1830;}
+
+.tbl-controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+.search-box{position:relative}.search-box input{padding:8px 12px 8px 32px;border:1px solid var(--line);border-radius:6px;font-size:13px;color:var(--ink);background:var(--panel);outline:none;width:240px}
+.search-box input:focus{border-color:var(--ink-2)}.search-box input::placeholder{color:var(--muted)}
+.search-box svg{position:absolute;left:10px;top:50%;transform:translateY(-50%)}
+.filter-dropdown select {padding:8px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px;color:var(--ink);background:var(--panel);outline:none;width:200px;}
+
+.tbl-wrap{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);overflow:hidden;overflow-x:auto}
+table.accounts-tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.accounts-tbl thead th{text-align:left;font-size:11px;font-weight:500;color:var(--muted);padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);white-space:nowrap}
+table.accounts-tbl tbody td{padding:14px 18px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+table.accounts-tbl tbody tr:last-child td{border-bottom:none}.accounts-tbl tbody tr:hover{background:var(--panel-alt)}
+
+.acct-left{display:flex;align-items:center;gap:12px}
+.aa-badge{width:34px;height:34px;border-radius:7px;background:var(--panel-alt);color:var(--ink);display:grid;place-items:center;font-size:11px;font-weight:600;flex-shrink:0;border:1px solid var(--line)}
+.aa-name{font-size:13.5px;color:var(--ink);font-weight:500}.aa-sub{font-size:11px;color:var(--muted);margin-top:2px}
+
+.td-proj-badge{display:inline-block;padding:3px 8px;background:var(--accent-bg);color:var(--accent);border-radius:4px;font-size:11.5px;font-weight:600;}
+.td-client{font-size:11px;color:var(--muted);margin-top:4px;}
+
+.row-act{display:flex;gap:12px;align-items:center;justify-content:flex-end}
+.act-link{font-size:12.5px;color:var(--muted);font-weight:500;cursor:pointer;background:none;border:none;padding:0;transition:color .15s;text-decoration:none}
+.act-link:hover{color:var(--ink)}.act-link.rm:hover{color:var(--flag)}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(21,31,53,0.45);align-items:center;justify-content:center;padding:20px;z-index:200;}
+.modal-overlay.active{display:flex;animation:fadein .2s ease;}
+.modal-box{background:var(--panel);border-radius:var(--radius);max-width:440px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(21,31,53,0.2);}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.modal-head h2{font-size:17px;}
+.modal-hint{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+.modal-close{background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;line-height:1;}
+.modal-close:hover{color:var(--ink);}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:6px;font-weight:500;}
+.field input, .field select{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;color:var(--ink);background:var(--panel);outline:none;transition:border-color .2s;}
+.field input:focus, .field select:focus{border-color:var(--ink-2);}
+.field input::placeholder{color:var(--muted);}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+@keyframes fadein{from{opacity:0;}to{opacity:1;}}
+
+.alert-block{margin-bottom:18px;}
+.alert{padding:11px 13px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;animation:fadein .25s ease;}
+.alert-error{background:var(--flag-bg);border:1px solid rgba(160,99,26,0.25);color:var(--flag);}
+.alert-success{background:var(--verified-bg);border:1px solid rgba(30,110,82,0.25);color:var(--verified);}
+.alert-info{background:var(--accent-bg);border:1px solid rgba(122,42,46,0.2);color:var(--accent);}
+.alert-close{background:none;border:none;color:currentColor;cursor:pointer;font-size:15px;opacity:0.5;line-height:1;}
+.alert-close:hover{opacity:1;}
+{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+  {% if messages %}
+  <div class="alert-block">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}">
+      <span>{{ message }}</span>
+      <button class="alert-close" onclick="this.parentElement.remove()">x</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="page-header">
+    <div>
+      <h1>Bank Accounts</h1>
+      <p class="page-header-sub">All bank accounts in the system, each mapped to one project and client.</p>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn primary" onclick="openM('addAcctModal')">
+        + Add bank account
+      </button>
+    </div>
+  </div>
+
+  <div class="tbl-controls">
+    <div class="search-box">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#767F8E" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input type="text" id="acct-search" placeholder="Search bank or account number" oninput="searchTbl()">
+    </div>
+    <div class="filter-dropdown">
+      <select id="proj-filter" onchange="searchTbl()">
+        <option value="">All projects</option>
+        {% for p in projects %}
+        <option value="{{ p.name }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table class="accounts-tbl" id="accounts-tbl">
+      <thead>
+        <tr>
+          <th>Bank account</th>
+          <th>Account no.</th>
+          <th>Currency</th>
+          <th>Mapped to project</th>
+          <th style="text-align:right"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for acc in accounts %}
+        <tr data-proj="{{ acc.project.name }}">
+          <td>
+            <div class="acct-left">
+              <div class="aa-badge">{{ acc.bank_name|slice:":2"|upper }}</div>
+              <div>
+                <div class="aa-name">{{ acc.bank_name }} {% if acc.account_title %}&mdash; {{ acc.account_title }}{% endif %}</div>
+                <div class="aa-sub">{{ acc.bank_name }} &ndash; Account ending {{ acc.account_number|slice:"-4:" }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div style="font-family:'IBM Plex Mono', monospace; font-size:13.5px; color:var(--ink-2)">... {{ acc.account_number|slice:"-4:" }}</div>
+          </td>
+          <td>
+            <div style="color:var(--ink-2)">{{ acc.currency }}</div>
+          </td>
+          <td>
+            <div class="td-proj-badge">{{ acc.project.name }}</div>
+          </td>
+          <td>
+            <div class="row-act">
+              <button class="act-link" onclick="openEditAcct({{ acc.id }}, '{{ acc.project.id }}', '{{ acc.bank_name|escapejs }}', '{{ acc.account_number|escapejs }}', '{{ acc.account_holder|default:''|escapejs }}')">Edit</button>
+              <form method="POST" onsubmit="return confirm('Remove this account?');" style="margin:0">
+                {% csrf_token %}
+                <input type="hidden" name="account_id" value="{{ acc.id }}">
+                <button type="submit" name="delete_account" class="act-link rm">Remove</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" style="text-align:center; padding:30px; color:var(--muted)">No bank accounts mapped yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL: Add bank account -->
+<div class="modal-overlay" id="addAcctModal">
+  <div class="modal-box">
+    <div class="modal-head"><h2>Add bank account</h2><button type="button" class="modal-close" onclick="closeM('addAcctModal')">&#x2715;</button></div>
+    <form method="POST">
+      {% csrf_token %}
+      <div class="field">
+        <label>Project <span style="color:var(--accent)">*</span></label>
+        <select name="project_id" required>
+          <option value="" disabled selected>Select a project</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <!-- <div class="field"><label>Account holder name</label><input type="text" name="account_holder" placeholder="Full name on the account"></div> -->
+      <div class="field"><label>Bank name <span style="color:var(--accent)">*</span></label><input type="text" name="bank_name" placeholder="e.g. First National" required></div>
+      <div class="field"><label>Account number <span style="color:var(--accent)">*</span></label><input type="text" name="account_number" placeholder="Full account number" required></div>
+      <div class="modal-actions"><button type="button" class="btn" onclick="closeM('addAcctModal')">Cancel</button><button type="submit" name="add_account" class="btn primary">Add account</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Edit bank account -->
+<div class="modal-overlay" id="editAcctModal">
+  <div class="modal-box">
+    <div class="modal-head"><h2>Edit bank account</h2><button type="button" class="modal-close" onclick="closeM('editAcctModal')">&#x2715;</button></div>
+    <form method="POST" id="editAcctForm">
+      {% csrf_token %}
+      <input type="hidden" name="account_id" id="ea_id">
+      <div class="field">
+        <label>Project <span style="color:var(--accent)">*</span></label>
+        <select name="project_id" id="ea_proj" disabled>
+          <option value="">Cannot change project</option>
+        </select>
+      </div>
+      <!-- <div class="field"><label>Account holder name</label><input type="text" name="account_holder" id="ea_holder"></div> -->
+      <div class="field"><label>Bank name *</label><input type="text" name="bank_name" id="ea_bank" required></div>
+      <div class="field"><label>Account number *</label><input type="text" name="account_number" id="ea_number" required></div>
+      <div class="modal-actions"><button type="button" class="btn" onclick="closeM('editAcctModal')">Cancel</button><button type="submit" name="edit_account" class="btn primary">Save changes</button></div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openM(id){document.getElementById(id).classList.add('active');}
+function closeM(id){document.getElementById(id).classList.remove('active');}
+document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('active');});});
+
+function openEditAcct(id, proj_id, bank, num, holder) {
+  if (document.getElementById('ea_id')) document.getElementById('ea_id').value = id;
+  if (document.getElementById('ea_bank')) document.getElementById('ea_bank').value = bank;
+  if (document.getElementById('ea_number')) document.getElementById('ea_number').value = num;
+  if (document.getElementById('ea_holder')) document.getElementById('ea_holder').value = holder;
+  openM('editAcctModal');
+}
+
+function searchTbl() {
+  let q = document.getElementById('acct-search').value.toUpperCase();
+  let f = document.getElementById('proj-filter').value;
+  document.getElementById('accounts-tbl').querySelectorAll('tbody tr').forEach(r => {
+    if(!r.hasAttribute('data-proj')) return; // ignore empty row
+    let txt = r.textContent.toUpperCase();
+    let proj = r.getAttribute('data-proj');
+    let matchQ = txt.includes(q);
+    let matchF = f === '' || proj === f;
+    r.style.display = (matchQ && matchF) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}
