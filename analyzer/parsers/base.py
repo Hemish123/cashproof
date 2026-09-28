@@ -217,7 +217,7 @@ class BaseParser:
         if re.search(r'\b(ACH|DIRDEP|DIRECT\s*DEP|PAYROLL)\b', desc):
             return 'ACH / Direct Deposit'
         if re.search(r'\b(TRANSFER|XFER|CBUSOL\s*TRANSFER|ONLINE\s*TRANSFER|INTERNAL)\b', desc):
-            return 'Self Transfer'
+            return 'Transfer'
         if re.search(r'\b(FEE|SERVICE\s*CHG|CHARGE|OVERDRAFT|MAINTENANCE)\b', desc):
             return 'Bank Fee'
         if re.search(r'\b(INTEREST|INT\s*PAID)\b', desc):

@@ -2,6 +2,15 @@ from django.db import models
 from django.contrib.auth.models import User
 import os
 
+class Project(models.Model):
+    name = models.CharField(max_length=255)
+    client_name = models.CharField(max_length=255, blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='projects')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
 class StatementUpload(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -10,11 +19,14 @@ class StatementUpload(models.Model):
         ('FAILED', 'Failed'),
     ]
 
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='uploads', null=True, blank=True)
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='uploads')
     file = models.FileField(upload_to='statements/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     error_message = models.TextField(null=True, blank=True)
+    total_deposits = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    total_payments = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
 
     def filename(self):
         return os.path.basename(self.file.name)
@@ -23,9 +35,11 @@ class StatementUpload(models.Model):
         return f"Upload {self.id} - {self.filename()} ({self.status})"
 
 class BankAccount(models.Model):
-    upload = models.ForeignKey(StatementUpload, on_delete=models.CASCADE, related_name='accounts')
-    bank_name = models.CharField(max_length=100, default='Unknown Bank')
-    account_number = models.CharField(max_length=50, default='Unknown Account')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='bank_accounts', null=True, blank=True)
+    upload = models.ForeignKey(StatementUpload, on_delete=models.CASCADE, related_name='bank_accounts', null=True, blank=True)
+    is_manual = models.BooleanField(default=False)
+    bank_name = models.CharField(max_length=100)
+    account_number = models.CharField(max_length=50)
     account_holder = models.CharField(max_length=255, null=True, blank=True)
     account_title = models.CharField(max_length=255, null=True, blank=True, default='Operating Account')
     currency = models.CharField(max_length=10, default='USD')

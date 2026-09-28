@@ -1,7 +1,7 @@
-from django import forms
+﻿from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import AuthenticationForm
-from .models import UserBankAccount
+
 
 
 class SignupForm(forms.Form):
@@ -52,20 +52,3 @@ class LoginForm(forms.Form):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={'placeholder': 'Password', 'id': 'id_login_password'})
     )
-
-
-class BankAccountForm(forms.ModelForm):
-    class Meta:
-        model = UserBankAccount
-        fields = ['account_holder_name', 'account_number', 'bank_name']
-        widgets = {
-            'account_holder_name': forms.TextInput(attrs={
-                'placeholder': 'Account Holder Name', 'id': 'id_holder_name'
-            }),
-            'account_number': forms.TextInput(attrs={
-                'placeholder': 'Account Number', 'id': 'id_account_number'
-            }),
-            'bank_name': forms.TextInput(attrs={
-                'placeholder': 'Bank Name', 'id': 'id_bank_name'
-            }),
-        }

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dashboard -- Cash Proof</title>
+<meta name="description" content="Manage your Cash Proof analysis projects." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:#FAFAF8; --panel:#FFFFFF; --panel-alt:#F2F1EA;
+    --ink:#151F35; --ink-2:#414B60; --muted:#767F8E;
+    --line:#DEDCD1; --line-soft:#EAE8DD;
+    --verified:#1E6E52; --verified-bg:#E6F1EC;
+    --flag:#A0631A; --flag-bg:#FBF0DE;
+    --accent:#7A2A2E; --accent-bg:#F5E9E8;
+    --gold:#C9A24A;
+    --sidebar-bg:#141C2E; --sidebar-hover:#1E2A42; --sidebar-active:#253350;
+    --sidebar-text:#A8B3C8; --sidebar-text-active:#E8ECF4;
+    --radius:8px;
+    font-variant-numeric:tabular-nums;
+    box-sizing:border-box;
+  }
+  *{box-sizing:inherit;margin:0;padding:0;}
+  html,body{min-height:100%;height:100%;}
+  body{background:var(--paper);color:var(--ink-2);font-family:'IBM Plex Sans',Arial,sans-serif;font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased;display:flex;}
+  ::selection{background:var(--accent-bg);color:var(--accent);}
+  a{color:inherit;text-decoration:none;}
+  button,input,select{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  h1,h2,h3{font-family:'Source Serif 4',Georgia,serif;color:var(--ink);margin:0;font-weight:600;}
+  p{margin:0;}
+  svg{display:block;}
+
+  /* Sidebar */
+  .sidebar{width:168px;min-height:100vh;background:var(--sidebar-bg);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;z-index:100;}
+  .sidebar-brand{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:9px;}
+  .sidebar-mark{width:28px;height:28px;border:1.5px solid var(--accent);border-radius:5px;display:grid;place-items:center;flex-shrink:0;background:rgba(122,42,46,0.12);}
+  .sidebar-brand-name{font-family:'Source Serif 4';font-size:15px;font-weight:600;color:#E8ECF4;line-height:1.2;}
+  .sidebar-brand-sub{font-size:10px;color:var(--sidebar-text);margin-top:1px;line-height:1.2;}
+  .sidebar-nav{padding:12px 0;flex:1;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--sidebar-text);font-size:13px;font-weight:500;transition:background .15s,color .15s;cursor:pointer;border-radius:0;position:relative;text-decoration:none;}
+  .nav-item:hover{background:var(--sidebar-hover);color:var(--sidebar-text-active);}
+  .nav-item.active{background:var(--sidebar-active);color:var(--sidebar-text-active);}
+  .nav-item.active::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;background:var(--accent);border-radius:0 2px 2px 0;}
+  .nav-item svg{flex-shrink:0;opacity:0.7;}
+  .nav-item.active svg{opacity:1;}
+  .nav-badge{margin-left:auto;background:rgba(255,255,255,0.1);color:var(--sidebar-text);font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:100px;font-family:'IBM Plex Mono';}
+  .sidebar-footer{padding:14px 16px;border-top:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:9px;}
+  .sidebar-avatar{width:26px;height:26px;border-radius:50%;background:var(--sidebar-active);color:#D9DCE6;display:grid;place-items:center;font-size:11px;font-weight:600;flex-shrink:0;border:1px solid rgba(255,255,255,0.12);}
+  .sidebar-user{flex:1;min-width:0;}
+  .sidebar-username{font-size:12px;color:var(--sidebar-text-active);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sidebar-logout{font-size:11px;color:var(--sidebar-text);text-decoration:none;transition:color .15s;}
+  .sidebar-logout:hover{color:#E8ECF4;}
+
+  /* Main */
+  .main-content{margin-left:168px;flex:1;min-height:100vh;display:flex;flex-direction:column;}
+  .page-wrap{padding:30px 32px 60px;width:100%;box-sizing:border-box;}
+
+  /* Alerts */
+  .alert-block{margin-bottom:18px;}
+  .alert{padding:11px 13px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;animation:fadein .25s ease;}
+  .alert-error{background:var(--flag-bg);border:1px solid rgba(160,99,26,0.25);color:var(--flag);}
+  .alert-success{background:var(--verified-bg);border:1px solid rgba(30,110,82,0.25);color:var(--verified);}
+  .alert-info{background:var(--accent-bg);border:1px solid rgba(122,42,46,0.2);color:var(--accent);}
+  .alert-close{background:none;border:none;color:currentColor;cursor:pointer;font-size:15px;opacity:0.5;line-height:1;}
+  .alert-close:hover{opacity:1;}
+
+  /* Page header */
+  .page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;}
+  .page-header h1{font-size:22px;}
+  .page-header-sub{font-size:13px;color:var(--muted);margin-top:4px;margin-bottom:20px;}
+  .page-header-sub a{color:var(--accent);}
+  .header-actions{display:flex;align-items:center;gap:8px;}
+
+  /* Buttons */
+  .btn{font-size:13px;font-weight:500;padding:8px 14px;border-radius:6px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none;}
+  .btn:hover{border-color:var(--ink-2);}
+  .btn.primary{background:var(--ink);color:#F3F1E8;border-color:var(--ink);}
+  .btn.primary:hover{background:#0F1830;}
+  .btn.ghost{border-color:transparent;background:none;color:var(--muted);}
+  .btn.ghost:hover{color:var(--ink);}
+  .btn.sm{padding:6px 10px;font-size:12px;}
+
+  /* Stats */
+  .stat-strip{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--panel);margin-bottom:24px;}
+  .stat-cell{padding:16px 20px;border-right:1px solid var(--line);}
+  .stat-cell:last-child{border-right:none;}
+  .stat-cell .s-label{font-size:12px;color:var(--muted);margin-bottom:6px;}
+  .stat-cell .s-value{font-family:'IBM Plex Mono';font-size:22px;font-weight:600;color:var(--ink);}
+  .stat-cell .s-value.warn{color:var(--flag);}
+
+  /* Section header */
+  .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .section-header h2{font-size:16px;}
+  .section-link{font-size:13px;color:var(--muted);text-decoration:none;transition:color .15s;}
+  .section-link:hover{color:var(--accent);}
+
+  /* Project cards */
+  .project-cards{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--panel);}
+  .project-card{padding:18px 20px;border-bottom:1px solid var(--line-soft);transition:background .15s;}
+  .project-card:last-child{border-bottom:none;}
+  .project-card:hover{background:var(--panel-alt);}
+  .project-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+  .project-card-name{font-family:'Source Serif 4';font-size:15.5px;font-weight:600;color:var(--ink);}
+  .project-card-client{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .project-card-client a{color:var(--accent);font-weight:500;}
+  .view-link{font-size:13px;color:var(--accent);font-weight:500;white-space:nowrap;transition:opacity .15s;}
+  .view-link:hover{opacity:0.75;}
+
+  /* Account chips */
+  .account-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--line);border-radius:100px;font-size:12px;color:var(--ink-2);background:var(--paper);}
+  .chip-icon{width:18px;height:18px;border-radius:50%;background:var(--accent-bg);color:var(--accent);display:grid;place-items:center;font-size:9px;font-weight:700;font-family:'IBM Plex Mono';flex-shrink:0;}
+  .chip-label{font-family:'IBM Plex Mono';font-size:11px;color:var(--muted);}
+  .no-accounts-note{font-size:12.5px;color:var(--flag);margin-top:10px;font-style:italic;}
+
+  /* Empty state */
+  .empty-state{padding:52px 24px;text-align:center;border:1.5px dashed var(--line);border-radius:var(--radius);color:var(--muted);background:var(--panel);}
+  .empty-state .empty-title{font-size:16px;font-weight:500;color:var(--ink);margin-bottom:6px;font-family:'Source Serif 4';}
+  .empty-state .empty-desc{font-size:13px;color:var(--muted);margin-bottom:18px;}
+
+  /* Modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(21,31,53,0.45);align-items:center;justify-content:center;padding:20px;z-index:200;}
+  .modal-overlay.active{display:flex;animation:fadein .2s ease;}
+  .modal-box{background:var(--panel);border-radius:var(--radius);max-width:440px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(21,31,53,0.2);}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .modal-head h2{font-size:17px;}
+  .modal-hint{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+  .modal-close{background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;line-height:1;}
+  .modal-close:hover{color:var(--ink);}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:6px;font-weight:500;}
+  .field input{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;color:var(--ink);background:var(--panel);outline:none;transition:border-color .2s;}
+  .field input:focus{border-color:var(--ink-2);}
+  .field input::placeholder{color:var(--muted);}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+  @keyframes fadein{from{opacity:0;}to{opacity:1;}}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-mark">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <path d="M2 8.5L6 12L14 3" stroke="#7A2A2E" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="sidebar-brand-name">Cash Proof</div>
+      <div class="sidebar-brand-sub">Interbank &amp; cash reconciliation</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="{% url 'project_list' %}" class="nav-item active" id="nav-dashboard">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
+      Dashboard
+    </a>
+    <a href="{% url 'project_workspace' %}" class="nav-item" id="nav-workspace">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      Project Workspace
+      {% if projects.count %}<span class="nav-badge">{{ projects.count }}</span>{% endif %}
+    </a>
+    <!-- <a href="{% url 'project_list' %}" class="nav-item" id="nav-bank-accounts">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+      </svg>
+      Bank Accounts
+    </a> -->
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-avatar">{{ request.user.username|slice:":1"|upper }}</div>
+    <div class="sidebar-user">
+      <div class="sidebar-username">{{ request.user.username }}</div>
+      <a href="{% url 'logout' %}" class="sidebar-logout" id="logout-btn">Log out</a>
+    </div>
+  </div>
+</aside>
+
+<!-- Main content -->
+<div class="main-content">
+  <div class="page-wrap">
+
+    {% if messages %}
+    <div class="alert-block">
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">
+        <span>{{ message }}</span>
+        <button class="alert-close" onclick="this.parentElement.remove()">x</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Page header -->
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <div class="header-actions">
+        <button type="button" class="btn primary" id="new-project-btn"
+          onclick="document.getElementById('createProjectModal').classList.add('active')">
+          + New project
+        </button>
+      </div>
+    </div>
+    <p class="page-header-sub">Every project, its client, and the bank accounts mapped to it.</p>
+
+    <!-- Stats strip -->
+    <div class="stat-strip">
+      <div class="stat-cell">
+        <div class="s-label">Total projects</div>
+        <div class="s-value">{{ projects.count }}</div>
+      </div>
+      <div class="stat-cell">
+        <div class="s-label">Total bank accounts</div>
+        <div class="s-value">{{ total_accounts }}</div>
+      </div>
+      <div class="stat-cell">
+        <div class="s-label">Projects with no bank accounts</div>
+        <div class="s-value warn">{{ no_account_projects }}</div>
+      </div>
+    </div>
+
+
+    <!-- Project Workspace section -->
+    <div class="section-header">
+      <h2>Project Workspace</h2>
+      <a href="{% url 'project_workspace' %}" class="section-link" id="manage-projects-link">Manage projects -&gt;</a>
+    </div>
+
+    {% if projects %}
+    <div class="project-cards" id="project-cards">
+      {% for p in projects %}
+      <div class="project-card">
+        <div class="project-card-top">
+          <div>
+            <div class="project-card-name">{{ p.name }}</div>
+            <div class="project-card-client">
+              Client: <a href="{% url 'project_detail' project_id=p.id %}">{{ p.client_name|default:"--" }}</a>
+              &middot; {{ p.bank_accounts.count }} bank account{{ p.bank_accounts.count|pluralize }}
+            </div>
+          </div>
+          <a href="{% url 'project_detail' project_id=p.id %}" class="view-link" id="view-{{ p.id }}">View project &mdash;</a>
+        </div>
+        {% with accounts=p.bank_accounts.all %}
+        {% if accounts %}
+        <div class="account-chips">
+          {% for acc in accounts %}
+          <div class="chip">
+            <div class="chip-icon">{{ acc.bank_name|slice:":2"|upper }}</div>
+            <span>{{ acc.bank_name|truncatechars:14 }}</span>
+            <span class="chip-label">... {{ acc.account_number|slice:"-4:" }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-accounts-note">No bank accounts mapped yet</div>
+        {% endif %}
+        {% endwith %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-title">No projects yet</div>
+      <p class="empty-desc">Create a project to start grouping bank accounts and statements for a client.</p>
+      <button type="button" class="btn primary" id="create-first-btn"
+        onclick="document.getElementById('createProjectModal').classList.add('active')">
+        + Create first project
+      </button>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- Create Project Modal -->
+<div class="modal-overlay" id="createProjectModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>New project</h2>
+      <button type="button" class="modal-close" id="close-modal-btn"
+        onclick="document.getElementById('createProjectModal').classList.remove('active')">x</button>
+    </div>
+    <p class="modal-hint">A project only needs a name and the client it belongs to.</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label>Project name <span style="color:var(--accent)">*</span></label>
+        <input type="text" name="name" id="id_name"
+          placeholder="e.g. FY25 Due Diligence"
+          value="{% if form.name.value %}{{ form.name.value }}{% endif %}"
+          required>
+        {% if form.name.errors %}<p style="color:var(--flag);font-size:12px;margin-top:4px;">{{ form.name.errors.0 }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label>Client name <span style="color:var(--accent)">*</span></label>
+        <input type="text" name="client_name" id="id_client_name"
+          placeholder="e.g. Meridian Capital"
+          value="{% if form.client_name.value %}{{ form.client_name.value }}{% endif %}"
+          required>
+        {% if form.client_name.errors %}<p style="color:var(--flag);font-size:12px;margin-top:4px;">{{ form.client_name.errors.0 }}</p>{% endif %}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="cancel-modal-btn"
+          onclick="document.getElementById('createProjectModal').classList.remove('active')">Cancel</button>
+        <button type="submit" class="btn primary" id="create-project-btn">Create project</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.getElementById('createProjectModal').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('active');
+  });
+  {% if form.errors %}
+  document.getElementById('createProjectModal').classList.add('active');
+  {% endif %}
+</script>
+</body>
+</html>
+
+
+
+
+

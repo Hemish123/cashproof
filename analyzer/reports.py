@@ -220,7 +220,46 @@ def generate_excel_report(bank_accounts, output_path):
         else:
             ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
             
+            
         current_row += 2 # gap
+
+    # ==================== BUILD UPLOADED STATEMENTS SUMMARY ====================
+    project = bank_accounts[0].project
+    uploads = list(project.uploads.all().order_by('uploaded_at'))
+    if uploads:
+        ws_summary.cell(row=current_row, column=1, value="Individual Uploaded Statements").font = font_total
+        current_row += 1
+        
+        upload_headers = ["Filename", "Upload Date", "Status", "Total Deposits", "Total Payments"]
+        for col_idx, header in enumerate(upload_headers, start=1):
+            cell = ws_summary.cell(row=current_row, column=col_idx, value=header)
+            cell.font = font_header
+            cell.fill = fill_header_summary
+            cell.alignment = align_center
+            cell.border = border_all
+        current_row += 1
+        
+        for idx, upload in enumerate(uploads):
+            row_data = [
+                upload.filename(),
+                upload.uploaded_at.strftime("%Y-%m-%d %H:%M"),
+                upload.status,
+                upload.total_deposits,
+                upload.total_payments
+            ]
+            for col_idx, val in enumerate(row_data, start=1):
+                cell = ws_summary.cell(row=current_row, column=col_idx, value=val)
+                cell.font = font_body
+                cell.border = border_all
+                if col_idx in (1, 2, 3):
+                    cell.alignment = align_left
+                else:
+                    cell.alignment = align_right
+                    cell.number_format = num_format_currency
+                if idx % 2 == 1:
+                    cell.fill = fill_zebra
+            current_row += 1
+        current_row += 2
 
     # ==================== BUILD TRANSACTION LEDGER ====================
     
@@ -302,11 +341,23 @@ def generate_excel_report(bank_accounts, output_path):
         current_ledger_row += 1
 
     # ==================== BUILD INDIVIDUAL ACCOUNT SHEETS ====================
-    for acc in bank_accounts:
+    for idx, acc in enumerate(bank_accounts):
         short_bank = "".join(c for c in acc.bank_name if c.isalnum() or c.isspace()).strip()
         short_bank = short_bank.split()[0] if short_bank else "Bank"
-        sheet_title = f"{short_bank}_{acc.account_number}"
+        
+        # Make sheet title unique by appending start date or an index
+        date_suffix = acc.start_date.strftime('%b%y') if acc.start_date else str(idx)
+        sheet_title = f"{short_bank}_{acc.account_number[-4:]}_{date_suffix}"
         sheet_title = re.sub(r'[\\/*?:\[\]]', '', sheet_title)[:30]
+        
+        # openpyxl will automatically append '1', '2' if there is still a conflict,
+        # but it's cleaner to handle it manually.
+        base_title = sheet_title
+        counter = 1
+        while base_title in wb.sheetnames:
+            base_title = f"{sheet_title[:26]}_{counter}"
+            counter += 1
+        sheet_title = base_title
         
         ws_acc = wb.create_sheet(title=sheet_title)
         ws_acc.views.sheetView[0].showGridLines = True

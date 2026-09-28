@@ -15,6 +15,8 @@ import logging
 from decimal import Decimal
 from django.conf import settings
 from .base import BaseParser
+from openai import AzureOpenAI
+
 
 # Global, process-wide cap on simultaneous OpenAI API calls. Without this,
 # MAX_CONCURRENT_FILES x MAX_PDF_WORKERS (e.g. 5 x 15 = 75) all fire at once
@@ -65,13 +67,22 @@ class PDFStatementParser(BaseParser):
         from openai import OpenAI
 
         # Only pull from settings.py, no .env loading
-        openai_api_key = getattr(settings, "OPENAI_API_KEY", None)
+        # openai_api_key = getattr(settings, "OPENAI_API_KEY", None)
+        # openai_model = getattr(settings, "OPENAI_MODEL", "gpt-5.5")
+
+        azure_openai_api_key = getattr(settings, "AZURE_OPENAI_API_KEY", None)
         openai_model = getattr(settings, "OPENAI_MODEL", "gpt-5.5")
 
-        if not openai_api_key:
+        if not azure_openai_api_key:
             raise ValueError("OPENAI_API_KEY is not defined in Django settings.")
 
-        client = OpenAI(api_key=openai_api_key)
+        # client = OpenAI(api_key=openai_api_key)
+
+        client = AzureOpenAI(
+            api_key=azure_openai_api_key,
+            azure_endpoint=getattr(settings,"AZURE_OPENAI_ENDPOINT"),
+            api_version="2024-02-15-preview"
+        )
 
         def parse_iso_date(d_str):
             if not d_str:
@@ -91,7 +102,7 @@ class PDFStatementParser(BaseParser):
                 for attempt in range(max_retries):
                     try:
                         response = client.chat.completions.create(
-                            model=openai_model,
+                            model="gpt-5.5",
                             messages=messages_list,
                             # temperature=0.0,
                             response_format={"type": "json_object"},
@@ -374,7 +385,7 @@ class PDFStatementParser(BaseParser):
             # Step 2: Extract Transactions chunk-by-chunk concurrently
             transactions = []
             total_start_time = time.time()
-            max_workers = getattr(settings, 'MAX_PDF_WORKERS', 8)
+            max_workers = getattr(settings, 'MAX_PDF_WORKERS', 2)
             print(f"[DEBUG] Submitting {len(chunks)} chunk(s) covering {len(pages)} pages to ThreadPoolExecutor (max_workers={max_workers})...")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

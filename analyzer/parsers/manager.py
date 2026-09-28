@@ -1,10 +1,11 @@
 import os
+from decimal import Decimal
 from django.db import transaction as db_transaction
 from ..models import StatementUpload, BankAccount, Transaction
 from .csv_excel import CSVExcelParser
 from .pdf_parser import PDFStatementParser
 
-def process_statement(upload_id, user=None):
+def process_statement(upload_id, project_id=None):
     """
     Processes an uploaded statement, saving accounts and transactions.
     """
@@ -38,32 +39,21 @@ def process_statement(upload_id, user=None):
         created_accounts = []
 
         # Database transaction to write results atomically
+        pdf_total_deposits = Decimal('0.00')
+        pdf_total_payments = Decimal('0.00')
+
         with db_transaction.atomic():
             for account_meta, transactions_data in parsed_accounts:
-                # Deduplicate: Remove any existing account for the exact same bank, account number & period
                 start_d = account_meta.get('start_date')
                 end_d = account_meta.get('end_date')
-                if start_d and end_d:
-                    existing_accs = list(BankAccount.objects.filter(
-                        bank_name=account_meta.get('bank_name', 'Unknown Bank'),
-                        account_number=account_meta.get('account_number', 'Unknown Account'),
-                        start_date=start_d,
-                        end_date=end_d
-                    ))
-                    for old_acc in existing_accs:
-                        old_upload = old_acc.upload
-                        old_acc.delete()
-                        if old_upload and old_upload.id != upload.id:
-                            try:
-                                old_upload.delete()
-                            except Exception:
-                                pass
-
-                # Create Bank Account
+                parsed_acc_num = account_meta.get('account_number', 'Unknown Account')
+                
+                # Always create a new BankAccount for this specific upload
                 bank_account = BankAccount.objects.create(
+                    project_id=project_id,
                     upload=upload,
                     bank_name=account_meta.get('bank_name', 'Unknown Bank'),
-                    account_number=account_meta.get('account_number', 'Unknown Account'),
+                    account_number=parsed_acc_num,
                     account_holder=account_meta.get('account_holder'),
                     account_title=account_meta.get('account_title', 'Operating Account'),
                     currency=account_meta.get('currency', 'USD'),
@@ -76,6 +66,12 @@ def process_statement(upload_id, user=None):
                 # Create Transactions
                 tx_instances = []
                 for tx_data in transactions_data:
+                    amt = Decimal(str(tx_data['amount']))
+                    if amt > 0:
+                        pdf_total_deposits += amt
+                    else:
+                        pdf_total_payments += abs(amt)
+                        
                     tx_instances.append(
                         Transaction(
                             account=bank_account,
@@ -94,12 +90,14 @@ def process_statement(upload_id, user=None):
 
                 created_accounts.append(bank_account)
 
+        upload.total_deposits = pdf_total_deposits
+        upload.total_payments = pdf_total_payments
         upload.status = 'COMPLETED'
         upload.error_message = None
         upload.save()
         
         # Trigger cross-account interbank matching and recalculate all summaries
-        run_interbank_detection_for_upload(user=user)
+        run_interbank_detection_for_upload(project_id=project_id)
         
         return created_accounts
 
@@ -156,9 +154,9 @@ def update_account_aggregates(bank_account):
 
     bank_account.save()
 
-def run_interbank_detection_for_upload(user=None):
+def run_interbank_detection_for_upload(project_id=None):
     """
     Trigger interbank matching and update all accounts scoped to the given user.
     """
     from ..services import detect_interbank_transactions
-    detect_interbank_transactions(user=user)
+    detect_interbank_transactions(project_id=project_id)
