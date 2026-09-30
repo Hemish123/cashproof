@@ -299,7 +299,7 @@
       <h2>Edit project</h2>
       <button type="button" class="modal-close" onclick="document.getElementById('editProjectModal').classList.remove('active')">x</button>
     </div>
-    <form method="POST" action="{% url 'project_setup' project.id %}">
+    <form method="POST" action="{% url 'project_detail' project.id %}">
       {% csrf_token %}
       <div class="field">
         <label>Project name <span style="color:var(--accent)">*</span></label>

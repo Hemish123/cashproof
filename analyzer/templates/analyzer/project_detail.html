@@ -270,7 +270,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
         {% for u in uploads %}
         <div style="display:flex; justify-content:space-between; align-items:center; background:var(--panel); padding:6px 10px; border-radius:4px; border:1px solid var(--line);">
           <div style="font-size:12px; color:var(--muted); word-break:break-all; padding-right:12px;">{{ u.filename }}</div>
-          <a href="{% url 'delete_upload' project.id u.id %}" onclick="return confirm('Remove this statement and all its parsed transactions?');" style="color:var(--flag); font-size:11px; font-weight:600; text-decoration:none; flex-shrink:0;">Delete</a>
+          <a href="{% url 'delete_upload' project.id u.id %}" onclick="triggerLoader('Reprocessing...','Updating cash flow metrics...');" style="color:var(--flag); font-size:11px; font-weight:600; text-decoration:none; flex-shrink:0;">Delete</a>
         </div>
         {% endfor %}
       </div>
@@ -284,7 +284,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
         <div class="dropzone-hint">PDF, CSV, XLSX</div>
         {{ upload_form.file }}
       </div>
-      <div id="file-label" style="margin-top:10px;font-size:12px;color:var(--verified);display:none"></div>
+      <div id="file-label" style="margin-top:10px;font-size:12px;color:var(--verified);display:none;max-height:150px;overflow-y:auto;"></div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeM('addStmtModal')">Cancel</button>
         <button type="submit" name="upload_statements" class="btn primary" id="add-reanalyze-btn">Add &amp; re-analyze</button>

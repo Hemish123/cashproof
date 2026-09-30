@@ -260,9 +260,10 @@
   // Edit project modal
   function openEditModal(id, name, client) {
     document.getElementById('edit_proj_name').value = name;
-    document.getElementById('edit_proj_client').value = client;
-    // Build the edit URL using project setup
-    document.getElementById('editProjectForm').action = '/analyzer/projects/' + id + '/setup/';
+    let clientEl = document.getElementById('edit_proj_client');
+    if (clientEl) clientEl.value = client;
+    // Build the edit URL to post to project_detail which handles update_project
+    document.getElementById('editProjectForm').action = '/analyzer/projects/' + id + '/';
     document.getElementById('editProjectModal').classList.add('active');
   }
 

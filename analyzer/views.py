@@ -176,7 +176,9 @@ def project_detail_view(request, project_id):
                             args=(upload_ids, project.id)
                         ).start()
                         messages.success(request, f"Started processing {len(upload_ids)} statement(s) for this project.")
-                return redirect('project_detail', project_id=project.id)
+                from django.urls import reverse
+                url = reverse('project_detail', kwargs={'project_id': project.id})
+                return redirect(f"{url}#documents")
             else:
                 messages.error(request, f"Form is invalid: {upload_form.errors}")
     
@@ -318,7 +320,9 @@ def delete_upload_view(request, project_id, upload_id):
     except StatementUpload.DoesNotExist:
         messages.error(request, "Statement not found.")
 
-    return redirect('project_detail', project_id=project_id)
+    from django.urls import reverse
+    url = reverse('project_detail', kwargs={'project_id': project_id})
+    return redirect(f"{url}#documents")
 @login_required(login_url='login')
 def delete_account_view(request, project_id, account_id):
     project = get_object_or_404(Project, id=project_id, user=request.user)
