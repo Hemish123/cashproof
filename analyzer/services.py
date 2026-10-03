@@ -67,7 +67,7 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
 
         is_reconciliation = (own_acc.upload and own_acc.upload.source_type == 'RECONCILIATION')
         desc_lower = tx.description.lower()
-        has_recon_keywords = is_reconciliation and ('transfer' in desc_lower or 'trans' in desc_lower or 'payroll' in desc_lower)
+        has_recon_keywords = is_reconciliation and ('transfer' in desc_lower or 'trans' in desc_lower)
 
         for sib in sibling_accounts:
             sib_num = _clean(sib.account_number)
