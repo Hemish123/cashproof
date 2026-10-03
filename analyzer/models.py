@@ -11,6 +11,14 @@ class Project(models.Model):
     def __str__(self):
         return self.name
 
+class AnalysisBatch(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='batches')
+    name = models.CharField(max_length=255, default='Batch 1')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.project.name} - {self.name}"
+
 class StatementUpload(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -18,8 +26,14 @@ class StatementUpload(models.Model):
         ('COMPLETED', 'Completed'),
         ('FAILED', 'Failed'),
     ]
+    SOURCE_CHOICES = [
+        ('STATEMENT', 'Bank Statement'),
+        ('RECONCILIATION', 'Reconciliation Document'),
+    ]
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='uploads', null=True, blank=True)
+    batch = models.ForeignKey(AnalysisBatch, on_delete=models.CASCADE, related_name='uploads', null=True, blank=True)
+    source_type = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='STATEMENT')
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='uploads')
     file = models.FileField(upload_to='statements/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -36,6 +50,7 @@ class StatementUpload(models.Model):
 
 class BankAccount(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='bank_accounts', null=True, blank=True)
+    batch = models.ForeignKey(AnalysisBatch, on_delete=models.CASCADE, related_name='bank_accounts', null=True, blank=True)
     upload = models.ForeignKey(StatementUpload, on_delete=models.CASCADE, related_name='bank_accounts', null=True, blank=True)
     is_manual = models.BooleanField(default=False)
     bank_name = models.CharField(max_length=100)

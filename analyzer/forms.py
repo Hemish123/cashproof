@@ -29,7 +29,13 @@ class StatementUploadForm(forms.ModelForm):
 
     class Meta:
         model = StatementUpload
-        fields = ['project', 'file']
+        fields = ['project', 'source_type', 'file']
+        widgets = {
+            'source_type': forms.Select(attrs={
+                'class': 'form-select',
+                'style': 'width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid var(--border-card); border-radius: 6px;'
+            })
+        }
     
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user', None)

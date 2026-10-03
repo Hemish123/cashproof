@@ -111,17 +111,28 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
     <span class="bc-cur">{{ project.name }}</span>
   </div>
   <div class="page-header">
-    <div>
-      <h1>{{ project.name }}</h1>
-      <div class="page-header-meta">{{ manual_accounts.count }} bank account{{ manual_accounts.count|pluralize }} mapped</div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div>
+        <h1>{{ project.name }}</h1>
+        <div class="page-header-meta">{{ manual_accounts.count }} bank account{{ manual_accounts.count|pluralize }} mapped</div>
+      </div>
+      {% if batches %}
+      <div style="padding-left: 16px; border-left: 1px solid var(--line);">
+        <select onchange="window.location.href='?batch_id=' + this.value" style="padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 13px; outline: none; cursor: pointer;">
+          {% for b in batches %}
+            <option value="{{ b.id }}" {% if active_batch and active_batch.id == b.id %}selected{% endif %}>{{ b.name }} ({{ b.created_at|date:"M d" }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
     </div>
     <div class="page-header-actions">
-      <a href="{% url 'download_report' project.id %}" class="btn" id="download-excel-btn">
+      <a href="{% url 'download_report' project.id %}{% if active_batch %}?batch_id={{ active_batch.id }}{% endif %}" class="btn" id="download-excel-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download Excel
       </a>
       <button type="button" class="btn" id="edit-proj-btn" onclick="openM('editProjModal')">Edit project</button>
       <button type="button" class="btn" id="add-acct-btn" onclick="openM('addAcctModal')">+ Add bank account</button>
-      <button type="button" class="btn primary" id="add-stmt-btn" onclick="openM('addStmtModal')">+ Add statements</button>
+      <button type="button" class="btn primary" id="add-stmt-btn" onclick="openM('addStmtModal')">+ Add Statements/Reconciliations</button>
     </div>
   </div>
   <div class="tabs-bar">
@@ -260,7 +271,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
 
 <!-- MODAL: Add statements -->
 <div class="modal-overlay" id="addStmtModal">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width: 600px;">
     <div class="modal-head"><h2>Add statements</h2><button type="button" class="modal-close" onclick="closeM('addStmtModal')">&#x2715;</button></div>
     <p class="modal-hint">Upload statements for the bank accounts mapped to {{ project.name }}.</p>
     {% if uploads %}
@@ -278,16 +289,26 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
     {% endif %}
     <form method="POST" enctype="multipart/form-data" id="upload-form" onsubmit="triggerLoader('Analyzing statements','Extracting transactions, standardizing data...')">
       {% csrf_token %}<div style="display:none">{{ upload_form.project }}</div>
+      <div class="field">
+        <label>File Type</label>
+        {{ upload_form.source_type }}
+      </div>
       <div class="dropzone" id="dropzone">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#767F8E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <div class="dropzone-title">Drop new statements here, or browse</div>
+        <div class="dropzone-title">Drop new statements/reconciliation files here, or browse</div>
         <div class="dropzone-hint">PDF, CSV, XLSX</div>
         {{ upload_form.file }}
       </div>
       <div id="file-label" style="margin-top:10px;font-size:12px;color:var(--verified);display:none;max-height:150px;overflow-y:auto;"></div>
-      <div class="modal-actions">
+      {% if active_batch %}
+      <input type="hidden" name="batch_id" value="{{ active_batch.id }}">
+      {% endif %}
+      <div class="modal-actions" style="flex-wrap: wrap;">
         <button type="button" class="btn" onclick="closeM('addStmtModal')">Cancel</button>
-        <button type="submit" name="upload_statements" class="btn primary" id="add-reanalyze-btn">Add &amp; re-analyze</button>
+        {% if batches %}
+        <button type="submit" name="upload_action" value="new_batch" class="btn" id="add-new-batch-btn">Analyze as New Batch</button>
+        {% endif %}
+        <button type="submit" name="upload_action" value="current_batch" class="btn primary" id="add-reanalyze-btn">Add to Current Batch &amp; Re-analyze</button>
       </div>
     </form>
   </div>

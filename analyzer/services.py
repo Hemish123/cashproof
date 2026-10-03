@@ -20,14 +20,19 @@ def _date_confidence(outflow_date, inflow_date):
         return 'high'
     return 'medium'
 
-def detect_interbank_transactions(project_id=None):
-    if project_id is not None:
+def detect_interbank_transactions(project_id=None, batch_id=None):
+    if batch_id is not None:
+        user_accounts = list(BankAccount.objects.filter(batch_id=batch_id))
+    elif project_id is not None:
         user_accounts = list(BankAccount.objects.filter(project_id=project_id))
+    else:
+        user_accounts = list(BankAccount.objects.all())
+        
+    if user_accounts:
         user_account_ids = [acc.id for acc in user_accounts]
         base_qs = Transaction.objects.filter(account_id__in=user_account_ids)
     else:
-        user_accounts = list(BankAccount.objects.all())
-        base_qs = Transaction.objects.all()
+        base_qs = Transaction.objects.none()
 
     base_qs.update(is_interbank=False, interbank_confidence=None, interbank_match_status=None)
 
@@ -60,17 +65,22 @@ def detect_interbank_transactions(project_id=None):
         matched_other = None
         confidence = None
 
+        is_reconciliation = (own_acc.upload and own_acc.upload.source_type == 'RECONCILIATION')
+        desc_lower = tx.description.lower()
+        has_recon_keywords = is_reconciliation and ('transfer' in desc_lower or 'trans' in desc_lower or 'payroll' in desc_lower)
+
         for sib in sibling_accounts:
             sib_num = _clean(sib.account_number)
             is_referenced = False
             
-            if sib_num and sib_num.lower() != 'unknownaccount':
-                if sib_num in desc_cleaned:
+            if not is_reconciliation and sib_num and sib_num.lower() != 'unknownaccount':
+                numbers_in_desc = re.findall(r'\d+', desc_cleaned)
+                if any(num.endswith(sib_num) for num in numbers_in_desc):
                     is_referenced = True
-                elif len(sib_num) >= 4 and sib_num[-4:] in desc_cleaned:
+                elif len(sib_num) >= 4 and any(num.endswith(sib_num[-4:]) for num in numbers_in_desc):
                     is_referenced = True
 
-            if is_referenced:
+            if is_referenced or has_recon_keywords:
                 candidates = []
                 for other_tx in all_txs:
                     if other_tx.id in paired_txs or other_tx.account_id != sib.id:
@@ -85,14 +95,14 @@ def detect_interbank_transactions(project_id=None):
                     confidence = _date_confidence(tx.date, matched_other.date)
                     break
                 else:
-                    # Referenced a sibling account but we don't have the matching transaction
-                    tx.is_interbank = True
-                    tx.interbank_confidence = 'low'
-                    tx.interbank_match_status = 'unverified_sibling_reference'
-                    if tx.id not in paired_txs:
-                        to_update.append(tx)
-                        # We don't add to paired_txs because we didn't find a pair, but it IS interbank
-                    break
+                    if is_referenced:
+                        # Referenced a sibling account but we don't have the matching transaction
+                        tx.is_interbank = True
+                        tx.interbank_confidence = 'low'
+                        tx.interbank_match_status = 'unverified_sibling_reference'
+                        if tx.id not in paired_txs:
+                            to_update.append(tx)
+                        break
         
         if matched_other:
             tx.is_interbank = True
@@ -106,6 +116,12 @@ def detect_interbank_transactions(project_id=None):
             paired_txs.add(tx.id)
             paired_txs.add(matched_other.id)
             to_update.extend([tx, matched_other])
+        elif has_recon_keywords and tx.interbank_match_status is None:
+            tx.is_interbank = True
+            tx.interbank_confidence = 'low'
+            tx.interbank_match_status = 'unverified_keyword_match'
+            if tx.id not in paired_txs:
+                to_update.append(tx)
 
     if to_update:
         unique_updates = {t.id: t for t in to_update}.values()

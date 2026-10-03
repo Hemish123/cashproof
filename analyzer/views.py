@@ -18,7 +18,7 @@ from .services import detect_interbank_transactions
 from .reports import generate_excel_report
 import concurrent.futures
 
-def process_batch_in_background(upload_ids, project_id=None):
+def process_batch_in_background(upload_ids, project_id=None, batch_id=None):
     try:
         
 
@@ -49,9 +49,11 @@ def process_batch_in_background(upload_ids, project_id=None):
 
         # Recalculate interbank pairs after all are processed
         if not project_id and upload_ids:
-            project_id = StatementUpload.objects.get(id=upload_ids[0]).project_id
+            first_upload = StatementUpload.objects.get(id=upload_ids[0])
+            project_id = first_upload.project_id
+            batch_id = first_upload.batch_id
             
-        detect_interbank_transactions(project_id=project_id)
+        detect_interbank_transactions(project_id=project_id, batch_id=batch_id)
     finally:
         connections.close_all()
 
@@ -160,25 +162,41 @@ def project_detail_view(request, project_id):
                 return redirect('project_detail', project_id=project.id)
             else:
                 messages.error(request, "Error adding bank account.")
-        elif 'upload_statements' in request.POST:
+        elif 'upload_action' in request.POST or 'upload_statements' in request.POST:
+            from .models import AnalysisBatch
             upload_form = StatementUploadForm(request.POST, request.FILES)
             if upload_form.is_valid():
                 files = request.FILES.getlist('file')
+                source_type = upload_form.cleaned_data.get('source_type', 'STATEMENT')
+                upload_action = request.POST.get('upload_action', 'current_batch')
+                
+                if upload_action == 'new_batch':
+                    batch_count = AnalysisBatch.objects.filter(project=project).count()
+                    batch = AnalysisBatch.objects.create(project=project, name=f"Batch {batch_count + 1}")
+                else:
+                    batch_id = request.POST.get('batch_id') or request.GET.get('batch_id')
+                    if batch_id:
+                        batch = get_object_or_404(AnalysisBatch, id=batch_id, project=project)
+                    else:
+                        batch = AnalysisBatch.objects.filter(project=project).order_by('-created_at').first()
+                        if not batch:
+                            batch = AnalysisBatch.objects.create(project=project, name="Batch 1")
+
                 if files:
                     upload_ids = []
                     for f in files:
-                        upload = StatementUpload.objects.create(file=f, project=project, user=request.user, status='PENDING')
+                        upload = StatementUpload.objects.create(file=f, project=project, batch=batch, user=request.user, status='PENDING', source_type=source_type)
                         upload_ids.append(upload.id)
                     
                     if upload_ids:
                         threading.Thread(
                             target=process_batch_in_background,
-                            args=(upload_ids, project.id)
+                            args=(upload_ids, project.id, batch.id)
                         ).start()
-                        messages.success(request, f"Started processing {len(upload_ids)} statement(s) for this project.")
+                        messages.success(request, f"Started processing {len(upload_ids)} statement(s) for {batch.name}.")
                 from django.urls import reverse
                 url = reverse('project_detail', kwargs={'project_id': project.id})
-                return redirect(f"{url}#documents")
+                return redirect(f"{url}?batch_id={batch.id}#documents")
             else:
                 messages.error(request, f"Form is invalid: {upload_form.errors}")
     
@@ -186,10 +204,26 @@ def project_detail_view(request, project_id):
     upload_form = StatementUploadForm(initial={'project': project})
     upload_form.fields['project'].widget = upload_form.fields['project'].hidden_widget()
 
-    uploads = StatementUpload.objects.filter(project=project).order_by('-uploaded_at')
+    from .models import AnalysisBatch
+    batches = AnalysisBatch.objects.filter(project=project).order_by('-created_at')
+    
+    batch_id = request.GET.get('batch_id')
+    if batch_id:
+        active_batch = get_object_or_404(AnalysisBatch, id=batch_id, project=project)
+    else:
+        active_batch = batches.first()
+
     manual_accounts = BankAccount.objects.filter(project=project, is_manual=True).order_by('bank_name')
-    raw_accounts = BankAccount.objects.filter(project=project, upload__isnull=False).order_by('bank_name')
-    all_transactions = Transaction.objects.filter(account__project=project).order_by('-date', '-id')
+    if active_batch:
+        uploads = StatementUpload.objects.filter(batch=active_batch).order_by('-uploaded_at')
+        raw_accounts = BankAccount.objects.filter(batch=active_batch, upload__isnull=False).order_by('bank_name')
+        all_transactions = Transaction.objects.filter(account__batch=active_batch).order_by('-date', '-id')
+    else:
+        uploads = StatementUpload.objects.none()
+        raw_accounts = BankAccount.objects.none()
+        raw_accounts = BankAccount.objects.none()
+        all_transactions = Transaction.objects.none()
+
     interbank_transactions = all_transactions.filter(is_interbank=True)
     regular_transactions = all_transactions.filter(is_interbank=False)
 
@@ -279,6 +313,8 @@ def project_detail_view(request, project_id):
         'interbank_count': interbank_count,
         'exceptions_count': exceptions_count,
         'uploads_count': uploads.count(),
+        'batches': batches,
+        'active_batch': active_batch,
     }
     return render(request, 'analyzer/project_detail.html', context)
 
@@ -355,17 +391,27 @@ def edit_account_view(request, project_id, account_id):
 @login_required(login_url='login')
 def download_report_view(request, project_id):
     project = get_object_or_404(Project, id=project_id, user=request.user)
-    accounts = BankAccount.objects.filter(project=project, upload__isnull=False).order_by('bank_name')
+    
+    batch_id = request.GET.get('batch_id')
+    
+    manual_accounts = BankAccount.objects.filter(project=project, is_manual=True).order_by('bank_name')
 
-    if not accounts.exists():
-        messages.warning(request, "No processed bank statements available to generate report.")
-        return redirect('project_detail', project_id=project_id)
+    if batch_id:
+        accounts = BankAccount.objects.filter(project=project, batch_id=batch_id, upload__isnull=False).order_by('bank_name')
+    else:
+        accounts = BankAccount.objects.filter(project=project, upload__isnull=False).order_by('bank_name')
+
+    if not accounts.exists() and not manual_accounts.exists():
+        messages.warning(request, "No bank statements or manual accounts available to generate report.")
+        from django.urls import reverse
+        url = reverse('project_detail', kwargs={'project_id': project_id})
+        return redirect(f"{url}?batch_id={batch_id}" if batch_id else url)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
         tmp_path = tmp.name
 
     try:
-        generate_excel_report(accounts, tmp_path)
+        generate_excel_report(accounts, tmp_path, manual_accounts=manual_accounts)
         with open(tmp_path, 'rb') as f:
             file_data = f.read()
 

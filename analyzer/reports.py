@@ -22,7 +22,7 @@ def format_statement_dates(start_date, end_date):
         return "Statement Dates Unknown"
     return f"Statement Dates {start_date.strftime('%m/%d/%y')} thru {end_date.strftime('%m/%d/%y')}"
 
-def generate_excel_report(bank_accounts, output_path):
+def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     """
     Generates a standardized Excel report matching QNB_KwikGoal format:
     1. Executive Summary
@@ -81,7 +81,8 @@ def generate_excel_report(bank_accounts, output_path):
 
     # Table Headers starting at row 4
     summary_headers = [
-        "Account", "Bank Name", "Account Number", "Total Deposits", "Total Payments",
+        "Account", "Time Period", "Bank Name", "Account Number", "Beginning Balance",
+        "Total Deposits", "Total Payments", "Ending Balance",
         "Total Interbank Deposits", "Total Interbank Payments",
         "Net Deposits", "Net Payments"
     ]
@@ -98,17 +99,27 @@ def generate_excel_report(bank_accounts, output_path):
     totals = {
         'deposits': Decimal('0.00'), 'payments': Decimal('0.00'),
         'ib_deposits': Decimal('0.00'), 'ib_payments': Decimal('0.00'),
-        'net_deposits': Decimal('0.00'), 'net_payments': Decimal('0.00')
+        'net_deposits': Decimal('0.00'), 'net_payments': Decimal('0.00'),
+        'beginning_balance': Decimal('0.00'), 'ending_balance': Decimal('0.00')
     }
 
+    if manual_accounts is None:
+        manual_accounts = []
+
+    all_summary_accounts = list(bank_accounts) + list(manual_accounts)
+
     # Populating summary rows
-    for idx, acc in enumerate(bank_accounts):
+    for idx, acc in enumerate(all_summary_accounts):
+        period_str = format_period(acc.start_date, acc.end_date)
         row_data = [
             acc.account_title or "Operating Account",
+            period_str,
             acc.bank_name,
             acc.account_number,
+            acc.beginning_balance,
             acc.total_deposits,
             acc.total_payments,
+            acc.ending_balance,
             acc.total_interbank_deposits,
             acc.total_interbank_payments,
             acc.net_deposits,
@@ -122,6 +133,8 @@ def generate_excel_report(bank_accounts, output_path):
         totals['ib_payments'] += acc.total_interbank_payments
         totals['net_deposits'] += acc.net_deposits
         totals['net_payments'] += acc.net_payments
+        totals['beginning_balance'] += acc.beginning_balance
+        totals['ending_balance'] += acc.ending_balance
 
         for col_idx, val in enumerate(row_data, start=1):
             cell = ws_summary.cell(row=current_row, column=col_idx, value=val)
@@ -129,7 +142,7 @@ def generate_excel_report(bank_accounts, output_path):
             cell.border = border_all
             
             # Format numbers vs text
-            if col_idx in (1, 2, 3):
+            if col_idx in (1, 2, 3, 4):
                 cell.alignment = align_left
             else:
                 cell.alignment = align_right
@@ -148,14 +161,16 @@ def generate_excel_report(bank_accounts, output_path):
     ws_summary.cell(row=current_row, column=1).border = double_bottom
     ws_summary.cell(row=current_row, column=1).fill = fill_total
     
-    ws_summary.cell(row=current_row, column=2, value="").border = double_bottom
-    ws_summary.cell(row=current_row, column=2).fill = fill_total
+    for col_idx in (2, 3, 4):
+        cell_blank = ws_summary.cell(row=current_row, column=col_idx, value="")
+        cell_blank.border = double_bottom
+        cell_blank.fill = fill_total
 
-    ws_summary.cell(row=current_row, column=3, value="").border = double_bottom
-    ws_summary.cell(row=current_row, column=3).fill = fill_total
-
-    total_keys = ['deposits', 'payments', 'ib_deposits', 'ib_payments', 'net_deposits', 'net_payments']
-    for idx, key in enumerate(total_keys, start=4):
+    total_keys = [
+        'beginning_balance', 'deposits', 'payments', 'ending_balance', 
+        'ib_deposits', 'ib_payments', 'net_deposits', 'net_payments'
+    ]
+    for idx, key in enumerate(total_keys, start=5):
         cell = ws_summary.cell(row=current_row, column=idx, value=totals[key])
         cell.font = font_total
         cell.alignment = align_right

@@ -51,6 +51,7 @@ def process_statement(upload_id, project_id=None):
                 # Always create a new BankAccount for this specific upload
                 bank_account = BankAccount.objects.create(
                     project_id=project_id,
+                    batch=upload.batch,
                     upload=upload,
                     bank_name=account_meta.get('bank_name', 'Unknown Bank'),
                     account_number=parsed_acc_num,
@@ -97,7 +98,7 @@ def process_statement(upload_id, project_id=None):
         upload.save()
         
         # Trigger cross-account interbank matching and recalculate all summaries
-        run_interbank_detection_for_upload(project_id=project_id)
+        run_interbank_detection_for_upload(project_id=project_id, batch_id=upload.batch_id)
         
         return created_accounts
 
@@ -154,9 +155,9 @@ def update_account_aggregates(bank_account):
 
     bank_account.save()
 
-def run_interbank_detection_for_upload(project_id=None):
+def run_interbank_detection_for_upload(project_id=None, batch_id=None):
     """
     Trigger interbank matching and update all accounts scoped to the given user.
     """
     from ..services import detect_interbank_transactions
-    detect_interbank_transactions(project_id=project_id)
+    detect_interbank_transactions(project_id=project_id, batch_id=batch_id)
