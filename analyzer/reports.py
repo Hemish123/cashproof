@@ -81,8 +81,9 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
 
     # Table Headers starting at row 4
     summary_headers = [
-        "Account", "Time Period", "Bank Name", "Account Number", "Beginning Balance",
-        "Total Deposits", "Total Payments", "Ending Balance",
+        "Account", "Time Period", "Bank Name", "Account Number", 
+        "Manually Entered Account Name", "Manually Entered Account Number", "Mapped",
+        "Beginning Balance", "Total Deposits", "Total Payments", "Ending Balance",
         "Total Interbank Deposits", "Total Interbank Payments",
         "Net Deposits", "Net Payments"
     ]
@@ -106,16 +107,50 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     if manual_accounts is None:
         manual_accounts = []
 
-    all_summary_accounts = list(bank_accounts) + list(manual_accounts)
+    # Map statement accounts to manual accounts
+    mapped_manual_accounts = set()
+    for acc in bank_accounts:
+        acc.mapped_manual = None
+        stmt_num = re.sub(r'\D', '', acc.account_number or '')
+        stmt_num_last4 = stmt_num[-4:] if len(stmt_num) >= 4 else stmt_num
+        for manual in manual_accounts:
+            man_num = re.sub(r'\D', '', manual.account_number or '')
+            man_num_last4 = man_num[-4:] if len(man_num) >= 4 else man_num
+            if stmt_num_last4 and man_num_last4 and stmt_num_last4 == man_num_last4:
+                acc.mapped_manual = manual
+                mapped_manual_accounts.add(manual)
+                break
+
+    unmapped_manuals = [m for m in manual_accounts if m not in mapped_manual_accounts]
+    all_summary_accounts = list(bank_accounts) + unmapped_manuals
 
     # Populating summary rows
     for idx, acc in enumerate(all_summary_accounts):
         period_str = format_period(acc.start_date, acc.end_date)
+        
+        manual_name = "-"
+        manual_number = "-"
+        mapped_status = "No"
+
+        if getattr(acc, 'is_manual', False):
+            # This is an unmapped manual account showing up on its own row
+            manual_name = acc.bank_name
+            manual_number = acc.account_number
+            mapped_status = "No"
+        else:
+            if getattr(acc, 'mapped_manual', None):
+                manual_name = acc.mapped_manual.bank_name
+                manual_number = acc.mapped_manual.account_number
+                mapped_status = "Yes"
+
         row_data = [
             acc.account_title or "Operating Account",
             period_str,
             acc.bank_name,
             acc.account_number,
+            manual_name,
+            manual_number,
+            mapped_status,
             acc.beginning_balance,
             acc.total_deposits,
             acc.total_payments,
@@ -142,7 +177,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell.border = border_all
             
             # Format numbers vs text
-            if col_idx in (1, 2, 3, 4):
+            if col_idx in (1, 2, 3, 4, 5, 6, 7):
                 cell.alignment = align_left
             else:
                 cell.alignment = align_right
@@ -161,7 +196,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     ws_summary.cell(row=current_row, column=1).border = double_bottom
     ws_summary.cell(row=current_row, column=1).fill = fill_total
     
-    for col_idx in (2, 3, 4):
+    for col_idx in range(2, 8):
         cell_blank = ws_summary.cell(row=current_row, column=col_idx, value="")
         cell_blank.border = double_bottom
         cell_blank.fill = fill_total
@@ -170,7 +205,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         'beginning_balance', 'deposits', 'payments', 'ending_balance', 
         'ib_deposits', 'ib_payments', 'net_deposits', 'net_payments'
     ]
-    for idx, key in enumerate(total_keys, start=5):
+    for idx, key in enumerate(total_keys, start=8):
         cell = ws_summary.cell(row=current_row, column=idx, value=totals[key])
         cell.font = font_total
         cell.alignment = align_right

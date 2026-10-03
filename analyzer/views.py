@@ -442,6 +442,20 @@ def upload_status_api(request, project_id):
     return JsonResponse({'is_processing': is_processing})
 
 @login_required(login_url='login')
+def global_upload_status_api(request):
+    processing_uploads = StatementUpload.objects.filter(
+        user=request.user,
+        status__in=['PENDING', 'PROCESSING']
+    )
+    is_processing = processing_uploads.exists()
+    has_reconciliation = processing_uploads.filter(source_type='RECONCILIATION').exists()
+    
+    return JsonResponse({
+        'is_processing': is_processing,
+        'has_reconciliation': has_reconciliation
+    })
+
+@login_required(login_url='login')
 def bank_account_list_view(request):
     projects = Project.objects.filter(user=request.user)
     

@@ -13,5 +13,6 @@ urlpatterns = [
     path('projects/<int:project_id>/account/<int:account_id>/edit/', views.edit_account_view, name='edit_account'),
     path('projects/<int:project_id>/account/<int:account_id>/delete/', views.delete_account_view, name='delete_account'),
     path('bank-accounts/', views.bank_account_list_view, name='bank_account_list'),
+    path('api/global-status/', views.global_upload_status_api, name='global_upload_status'),
 ]
 
