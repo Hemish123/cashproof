@@ -195,7 +195,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # choose a model you have access to
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")  # choose a model you have access to
 OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "90"))
 
 AZURE_OPENAI_API_KEY=os.getenv("AZURE_OPENAI_API_KEY")

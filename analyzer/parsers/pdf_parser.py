@@ -842,7 +842,7 @@ class PDFStatementParser(BaseParser):
             try:
                 with _GLOBAL_AI_CALL_SEMAPHORE:
                     response = client.chat.completions.create(
-                        model='gpt-5.5',
+                        model='gpt-4.1',
                         messages=messages,
                         response_format={"type": "json_object"},
                         timeout=90,
@@ -957,11 +957,10 @@ class PDFStatementParser(BaseParser):
     # Metadata extraction
     # ------------------------------------------------------------------
     def _extract_metadata(self, client, pages, page_data):
+        full_text = "\n\n".join(f"=== PAGE {d['p_idx'] + 1} ===\n{d['p_text']}" for d in page_data)
         header_text = "\n".join(d['p_text'] for d in page_data[:3])
         first_text = page_data[0]['p_text']
         self._extract_metadata_from_text(header_text, first_page_text=first_text)
-
-        last_text = page_data[-1]['p_text'] if len(pages) > 3 else ""
 
         meta_prompt = (
             "Extract header metadata from these bank statement pages.\n"
@@ -978,11 +977,10 @@ class PDFStatementParser(BaseParser):
             "'Total Checks and Payments', 'Total Deposits and Credits', or 'Total Cleared Transactions'. "
             "NONE of these is the ending balance — they are period totals, not account balances. The true "
             "ending balance is ONLY the figure on a line explicitly labeled 'Ending Balance' (or 'Closing "
-            "Balance' / 'Register Balance as of <date>'), usually the very last such line in the document. "
+            "Balance' / 'Register Balance as of <date>'). Scan ALL pages provided below to find it, as it "
+            "may appear on any page.\n"
             "If that line shows two dollar amounts side by side, the account balance is the SECOND (right-"
-            "hand) one — the first is just that period's net change. Use the 'LAST PAGE OF DOCUMENT' text "
-            "(or image) if provided; it is included specifically because the ending balance often only "
-            "appears there.\n"
+            "hand) one — the first is just that period's net change.\n"
             "If a value cannot be found, use null — never guess.\n"
             "JSON Schema:\n"
             "{\n"
@@ -1001,10 +999,10 @@ class PDFStatementParser(BaseParser):
 
         # Scanned / garbled header -> send page images instead of (empty) text.
         if page_data[0]['use_vision'] or len(header_text.strip()) < 200:
-            idxs = list(dict.fromkeys(list(range(min(3, len(pages)))) + [len(pages) - 1]))[:4]
+            idxs = list(dict.fromkeys(list(range(min(5, len(pages)))) + list(range(max(0, len(pages)-5), len(pages)))))[:10]
             dpi = getattr(settings, 'PDF_VISION_DPI', 150)
             content = [{"type": "text", "text": meta_prompt + "The statement pages are attached as images "
-                        "(first pages, then the last page)."}]
+                        "(first pages and last pages)."}]
             for i in idxs:
                 try:
                     b64 = page_data[i]['b64_str'] or self._render_b64(pages[i], dpi)
@@ -1014,11 +1012,9 @@ class PDFStatementParser(BaseParser):
                 content.append({"type": "image_url",
                                 "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"}})
             if len(content) == 1:
-                content = meta_prompt + f"HEADER TEXT:\n{header_text[:4000]}"
+                content = meta_prompt + f"STATEMENT TEXT:\n{full_text[:80000]}"
         else:
-            content = meta_prompt + f"HEADER TEXT:\n{header_text[:4000]}"
-            if last_text:
-                content += f"\n\nLAST PAGE OF DOCUMENT:\n{last_text[:3000]}"
+            content = meta_prompt + f"STATEMENT TEXT:\n{full_text[:80000]}"
 
         try:
             meta_res = self._ai_request(client, [
