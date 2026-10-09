@@ -833,50 +833,136 @@ class PDFStatementParser(BaseParser):
             text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=re.IGNORECASE).strip()
         return json.loads(text)
 
-    def _ai_request(self, client, messages, max_retries=4):
-        """One JSON chat completion with retries on transient errors.
-        The global semaphore is held only during the call itself, never
-        while sleeping between retries."""
-        model = getattr(settings, "OPENAI_MODEL", "gpt-5.5")
+    
+    def _ai_request(self, client, messages, model=None, max_retries=4):
+        model = model or getattr(
+            settings,
+            "OPENAI_MODEL",
+            "gpt-4.1-mini",
+        )
+
         for attempt in range(max_retries):
             try:
                 with _GLOBAL_AI_CALL_SEMAPHORE:
                     response = client.chat.completions.create(
-                        model='gpt-4.1',
+                        model=model,
                         messages=messages,
                         response_format={"type": "json_object"},
                         timeout=90,
                     )
+
                 choice = response.choices[0]
                 finish = choice.finish_reason
                 content = choice.message.content
-                if finish == 'length':
-                    raise _TruncatedResponse("Model output truncated (finish_reason=length)")
-                if finish == 'content_filter':
-                    raise StatementParseError("The AI provider's content filter blocked this request.")
+
+                if finish == "length":
+                    raise _TruncatedResponse(
+                        "Model output truncated (finish_reason=length)"
+                    )
+
+                if finish == "content_filter":
+                    raise StatementParseError(
+                        "The AI provider's content filter blocked this request."
+                    )
+
                 if not content:
-                    refusal = getattr(choice.message, 'refusal', None)
-                    raise _EmptyResponse(f"Empty model response (finish_reason={finish!r}, refusal={refusal!r})")
+                    refusal = getattr(
+                        choice.message,
+                        "refusal",
+                        None,
+                    )
+                    raise _EmptyResponse(
+                        f"Empty model response "
+                        f"(finish_reason={finish!r}, "
+                        f"refusal={refusal!r})"
+                    )
+
                 return self._loads_json(content)
+
             except (_TruncatedResponse, StatementParseError):
                 raise
+
             except Exception as e:
                 err_text = str(e).lower()
+
                 is_rate_limit = (
-                    '429' in err_text or 'rate limit' in err_text
-                    or 'rate_limit' in err_text or 'too many requests' in err_text
+                    "429" in err_text
+                    or "rate limit" in err_text
+                    or "rate_limit" in err_text
+                    or "too many requests" in err_text
                 )
+
                 is_transient = (
-                    is_rate_limit or isinstance(e, _EmptyResponse)
-                    or 'timeout' in err_text or 'timed out' in err_text
-                    or '500' in err_text or '502' in err_text or '503' in err_text
+                    is_rate_limit
+                    or isinstance(e, _EmptyResponse)
+                    or "timeout" in err_text
+                    or "timed out" in err_text
+                    or "500" in err_text
+                    or "502" in err_text
+                    or "503" in err_text
                 )
+
                 if not is_transient or attempt == max_retries - 1:
                     raise
+
                 base_wait = 5 if is_rate_limit else 2
-                wait_s = base_wait * (2 ** attempt) + random.uniform(0, 1)
-                _dbg(f"Transient API error ({e}); retrying in {wait_s:.1f}s (attempt {attempt + 1}/{max_retries})")
+                wait_s = (
+                    base_wait * (2 ** attempt)
+                    + random.uniform(0, 1)
+                )
+
+                _dbg(
+                    f"Transient API error ({e}); "
+                    f"retrying in {wait_s:.1f}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+
                 time.sleep(wait_s)
+
+    # def _ai_request(self, client, messages, max_retries=4):
+    #     """One JSON chat completion with retries on transient errors.
+    #     The global semaphore is held only during the call itself, never
+    #     while sleeping between retries."""
+    #     model = getattr(settings, "OPENAI_MODEL", "gpt-4.1-mini")
+    #     for attempt in range(max_retries):
+    #         try:
+    #             with _GLOBAL_AI_CALL_SEMAPHORE:
+    #                 response = client.chat.completions.create(
+    #                     model=model,
+    #                     messages=messages,
+    #                     response_format={"type": "json_object"},
+    #                     timeout=90,
+    #                 )
+    #             choice = response.choices[0]
+    #             finish = choice.finish_reason
+    #             content = choice.message.content
+    #             if finish == 'length':
+    #                 raise _TruncatedResponse("Model output truncated (finish_reason=length)")
+    #             if finish == 'content_filter':
+    #                 raise StatementParseError("The AI provider's content filter blocked this request.")
+    #             if not content:
+    #                 refusal = getattr(choice.message, 'refusal', None)
+    #                 raise _EmptyResponse(f"Empty model response (finish_reason={finish!r}, refusal={refusal!r})")
+    #             return self._loads_json(content)
+    #         except (_TruncatedResponse, StatementParseError):
+    #             raise
+    #         except Exception as e:
+    #             err_text = str(e).lower()
+    #             is_rate_limit = (
+    #                 '429' in err_text or 'rate limit' in err_text
+    #                 or 'rate_limit' in err_text or 'too many requests' in err_text
+    #             )
+    #             is_transient = (
+    #                 is_rate_limit or isinstance(e, _EmptyResponse)
+    #                 or 'timeout' in err_text or 'timed out' in err_text
+    #                 or '500' in err_text or '502' in err_text or '503' in err_text
+    #             )
+    #             if not is_transient or attempt == max_retries - 1:
+    #                 raise
+    #             base_wait = 5 if is_rate_limit else 2
+    #             wait_s = base_wait * (2 ** attempt) + random.uniform(0, 1)
+    #             _dbg(f"Transient API error ({e}); retrying in {wait_s:.1f}s (attempt {attempt + 1}/{max_retries})")
+    #             time.sleep(wait_s)
 
     # ------------------------------------------------------------------
     # Page classification / rendering
@@ -935,23 +1021,76 @@ class PDFStatementParser(BaseParser):
 
     @staticmethod
     def _make_chunks(page_data):
-        """Group consecutive text pages; vision pages are single-page chunks."""
-        chunk_size = getattr(settings, 'PDF_PAGE_CHUNK_SIZE', 5)
-        chunks, current = [], []
+        text_chunk_size = getattr(
+            settings,
+            "PDF_TEXT_CHUNK_SIZE",
+            5,
+        )
+
+        vision_chunk_size = getattr(
+            settings,
+            "PDF_VISION_CHUNK_SIZE",
+            5,
+        )
+
+        chunks = []
+        current_text = []
+        current_vision = []
+
+        def flush_text():
+            nonlocal current_text
+            if current_text:
+                chunks.append(current_text)
+                current_text = []
+
+        def flush_vision():
+            nonlocal current_vision
+            if current_vision:
+                chunks.append(current_vision)
+                current_vision = []
+
         for data in page_data:
-            if data['use_vision']:
-                if current:
-                    chunks.append(current)
-                    current = []
-                chunks.append([data])
+
+            if data["use_vision"]:
+                flush_text()
+
+                current_vision.append(data)
+
+                if len(current_vision) >= vision_chunk_size:
+                    flush_vision()
+
             else:
-                current.append(data)
-                if len(current) >= chunk_size:
-                    chunks.append(current)
-                    current = []
-        if current:
-            chunks.append(current)
+                flush_vision()
+
+                current_text.append(data)
+
+                if len(current_text) >= text_chunk_size:
+                    flush_text()
+
+        flush_text()
+        flush_vision()
+
         return chunks
+
+    # @staticmethod
+    # def _make_chunks(page_data):
+    #     """Group consecutive text pages; vision pages are single-page chunks."""
+    #     chunk_size = getattr(settings, 'PDF_PAGE_CHUNK_SIZE', 5)
+    #     chunks, current = [], []
+    #     for data in page_data:
+    #         if data['use_vision']:
+    #             if current:
+    #                 chunks.append(current)
+    #                 current = []
+    #             chunks.append([data])
+    #         else:
+    #             current.append(data)
+    #             if len(current) >= chunk_size:
+    #                 chunks.append(current)
+    #                 current = []
+    #     if current:
+    #         chunks.append(current)
+    #     return chunks
 
     # ------------------------------------------------------------------
     # Metadata extraction
@@ -1222,57 +1361,224 @@ class PDFStatementParser(BaseParser):
                     suspicious.append(n)
         return suspicious
 
-    def _extract_chunk(self, client, chunk):
-        page_nums = [d['p_idx'] + 1 for d in chunk]
-        start = time.time()
-        _dbg(f"Starting AI extraction for page(s) {page_nums}")
+    def _extract_chunk(
+        self,
+        client,
+        chunk,
+        model=None,
+        image_detail="low",
+    ):
+        page_nums = [
+            d["p_idx"] + 1
+            for d in chunk
+        ]
 
-        is_vision = len(chunk) == 1 and chunk[0]['use_vision']
-        if is_vision and not chunk[0]['b64_str']:
-            _dbg(f"Page(s) {page_nums} need vision but have no image — marking suspicious (never calling AI without the image)")
-            return {'txs': [], 'suspicious': page_nums}
+        start = time.time()
+
+        _dbg(
+            f"Starting AI extraction for page(s) {page_nums}"
+        )
+
+        is_vision = all(
+            d["use_vision"]
+            for d in chunk
+        )
+
+        if is_vision:
+            missing_images = [
+                d["p_idx"] + 1
+                for d in chunk
+                if not d.get("b64_str")
+            ]
+
+            if missing_images:
+                return {
+                    "txs": [],
+                    "suspicious": missing_images,
+                }
 
         instruction = self._tx_instruction(page_nums)
+
         if is_vision:
+
             user_msg = [
-                {"type": "text", "text": instruction},
-                {"type": "image_url",
-                 "image_url": {"url": f"data:image/jpeg;base64,{chunk[0]['b64_str']}", "detail": "high"}},
+                {
+                    "type": "text",
+                    "text": instruction,
+                }
             ]
+
+            for d in chunk:
+
+                user_msg.append({
+                    "type": "text",
+                    "text": (
+                        f"===== PAGE "
+                        f"{d['p_idx'] + 1} ====="
+                    ),
+                })
+
+                user_msg.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            "data:image/jpeg;base64,"
+                            f"{d['b64_str']}"
+                        ),
+                        "detail": image_detail,
+                    },
+                })
+
         else:
-            combined = "\n\n".join(f"=== PAGE {d['p_idx'] + 1} ===\n{d['p_text']}" for d in chunk)
-            user_msg = f"{instruction}\n\n{combined}"
+
+            combined = "\n\n".join(
+                f"=== PAGE {d['p_idx'] + 1} ===\n"
+                f"{d['p_text']}"
+                for d in chunk
+            )
+
+            user_msg = (
+                f"{instruction}\n\n"
+                f"{combined}"
+            )
 
         try:
-            tx_res = self._ai_request(client, [
-                {"role": "system", "content": "You are a precise financial transaction audit extraction agent."},
-                {"role": "user", "content": user_msg},
-            ])
+
+            tx_res = self._ai_request(
+                client,
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a precise financial "
+                            "transaction audit extraction agent."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": user_msg,
+                    },
+                ],
+                model=model,
+            )
+
         except _TruncatedResponse:
+
+            # If 5 pages produce too much JSON,
+            # retry one page at a time.
             if len(chunk) > 1:
-                _dbg(f"Page(s) {page_nums}: output truncated, retrying page by page")
-                merged = {'txs': [], 'suspicious': []}
+
+                _dbg(
+                    f"Pages {page_nums}: response truncated; "
+                    f"retrying individually."
+                )
+
+                merged = {
+                    "txs": [],
+                    "suspicious": [],
+                }
+
                 for d in chunk:
-                    sub = self._extract_chunk(client, [d])
-                    merged['txs'].extend(sub['txs'])
-                    merged['suspicious'].extend(sub['suspicious'])
+
+                    sub = self._extract_chunk(
+                        client,
+                        [d],
+                        model=model,
+                        image_detail=image_detail,
+                    )
+
+                    merged["txs"].extend(
+                        sub["txs"]
+                    )
+
+                    merged["suspicious"].extend(
+                        sub["suspicious"]
+                    )
+
                 return merged
-            raise
-        except Exception as err:
-            print(f"🛑 [DEBUG] ERROR on page(s) {page_nums}: {err}")
+
             raise
 
-        txs, counts, page_types = self._normalise_tx_response(tx_res, page_nums)
-        suspicious = self._find_suspicious_pages(chunk, counts, page_types)
+        txs, counts, page_types = (
+            self._normalise_tx_response(
+                tx_res,
+                page_nums,
+            )
+        )
+
+        suspicious = self._find_suspicious_pages(
+            chunk,
+            counts,
+            page_types,
+        )
 
         elapsed = time.time() - start
-        mode = "vision" if is_vision else "text"
-        _dbg(f"Page(s) {page_nums} [{mode}] done in {elapsed:.2f}s "
-             f"(Found {len(txs)} txs, types={page_types}, suspicious={suspicious})")
-        if not txs and suspicious:
-            snippet = json.dumps(tx_res)[:300] if tx_res is not None else 'None'
-            _dbg(f"Page(s) {page_nums}: 0 txs from a page that looks like it has some. Raw response: {snippet}")
-        return {'txs': txs, 'suspicious': suspicious}
+
+        _dbg(
+            f"Page(s) {page_nums} "
+            f"done in {elapsed:.2f}s "
+            f"(model={model}, "
+            f"detail={image_detail}, "
+            f"txs={len(txs)}, "
+            f"suspicious={suspicious})"
+        )
+
+        return {
+            "txs": txs,
+            "suspicious": suspicious,
+        }
+
+    # def _extract_chunk(self, client, chunk):
+    #     page_nums = [d['p_idx'] + 1 for d in chunk]
+    #     start = time.time()
+    #     _dbg(f"Starting AI extraction for page(s) {page_nums}")
+
+    #     is_vision = len(chunk) == 1 and chunk[0]['use_vision']
+    #     if is_vision and not chunk[0]['b64_str']:
+    #         _dbg(f"Page(s) {page_nums} need vision but have no image — marking suspicious (never calling AI without the image)")
+    #         return {'txs': [], 'suspicious': page_nums}
+
+    #     instruction = self._tx_instruction(page_nums)
+    #     if is_vision:
+    #         user_msg = [
+    #             {"type": "text", "text": instruction},
+    #             {"type": "image_url",
+    #              "image_url": {"url": f"data:image/jpeg;base64,{chunk[0]['b64_str']}", "detail": "high"}},
+    #         ]
+    #     else:
+    #         combined = "\n\n".join(f"=== PAGE {d['p_idx'] + 1} ===\n{d['p_text']}" for d in chunk)
+    #         user_msg = f"{instruction}\n\n{combined}"
+
+    #     try:
+    #         tx_res = self._ai_request(client, [
+    #             {"role": "system", "content": "You are a precise financial transaction audit extraction agent."},
+    #             {"role": "user", "content": user_msg},
+    #         ])
+    #     except _TruncatedResponse:
+    #         if len(chunk) > 1:
+    #             _dbg(f"Page(s) {page_nums}: output truncated, retrying page by page")
+    #             merged = {'txs': [], 'suspicious': []}
+    #             for d in chunk:
+    #                 sub = self._extract_chunk(client, [d])
+    #                 merged['txs'].extend(sub['txs'])
+    #                 merged['suspicious'].extend(sub['suspicious'])
+    #             return merged
+    #         raise
+    #     except Exception as err:
+    #         print(f"🛑 [DEBUG] ERROR on page(s) {page_nums}: {err}")
+    #         raise
+
+    #     txs, counts, page_types = self._normalise_tx_response(tx_res, page_nums)
+    #     suspicious = self._find_suspicious_pages(chunk, counts, page_types)
+
+    #     elapsed = time.time() - start
+    #     mode = "vision" if is_vision else "text"
+    #     _dbg(f"Page(s) {page_nums} [{mode}] done in {elapsed:.2f}s "
+    #          f"(Found {len(txs)} txs, types={page_types}, suspicious={suspicious})")
+    #     if not txs and suspicious:
+    #         snippet = json.dumps(tx_res)[:300] if tx_res is not None else 'None'
+    #         _dbg(f"Page(s) {page_nums}: 0 txs from a page that looks like it has some. Raw response: {snippet}")
+    #     return {'txs': txs, 'suspicious': suspicious}
 
     # ------------------------------------------------------------------
     # Validation helpers
@@ -1314,6 +1620,7 @@ class PDFStatementParser(BaseParser):
             _dbg(f"Dropped {dropped} duplicate check row(s) (same check listed in ledger and check table)")
         return out
 
+    
     def _repair_from_running_balances(self, transactions):
         """The printed running balance is usually more reliable than a
         vision-read amount, so for each row where prev_balance + amount !=
@@ -1400,6 +1707,89 @@ class PDFStatementParser(BaseParser):
                     f"Account {acct}: running-balance repair was tried but would not reconcile "
                     f"(error {err_before} -> {err_after}); original values kept — please review"
                 )
+    def _debug_reconciliation(self, transactions):
+        """
+        Debug only:
+        Beginning Balance + Sum(Transaction Amounts) = Ending Balance
+
+        Does NOT modify any transaction amount.
+        """
+        tol = Decimal("0.01")
+        primary_norm = self._normalize_account_number(self.account_number)
+
+        by_acct = {}
+
+        for tx in transactions:
+            acct = (
+                self._normalize_account_number(tx.get("account_number"))
+                or primary_norm
+            )
+            by_acct.setdefault(acct, []).append(tx)
+
+        print("\n" + "=" * 80)
+        print("🔍 RECONCILIATION DEBUG")
+        print("=" * 80)
+
+        for acct, rows in by_acct.items():
+
+            detected = next(
+                (
+                    a for a in getattr(self, "detected_accounts", [])
+                    if self._normalize_account_number(
+                        a.get("account_number")
+                    ) == acct
+                ),
+                None,
+            )
+
+            if acct == primary_norm:
+                beginning = self.beginning_balance
+                ending = self.ending_balance
+            else:
+                beginning = (
+                    self._to_decimal(detected.get("beginning_balance"))
+                    if detected else None
+                )
+                ending = (
+                    self._to_decimal(detected.get("ending_balance"))
+                    if detected else None
+                )
+
+            beginning = beginning or Decimal("0.00")
+            ending = ending or Decimal("0.00")
+
+            total = sum(
+                (tx["amount"] for tx in rows),
+                Decimal("0.00")
+            )
+
+            calculated_ending = beginning + total
+            difference = calculated_ending - ending
+
+            print(f"\nAccount: {acct}")
+            print(f"Beginning Balance : {beginning}")
+            print(f"Transaction Count : {len(rows)}")
+            print(f"Transaction Total : {total}")
+            print(f"Calculated Ending : {calculated_ending}")
+            print(f"Statement Ending  : {ending}")
+            print(f"Difference        : {difference}")
+
+            if abs(difference) <= tol:
+                print("✅ RECONCILIATION: PASS")
+            else:
+                print("❌ RECONCILIATION: FAIL")
+
+                print("\nTransactions:")
+                for i, tx in enumerate(rows, 1):
+                    print(
+                        f"{i}. "
+                        f"{tx['date']} | "
+                        f"{tx['description'][:60]} | "
+                        f"{tx['amount']} | "
+                        f"balance={tx.get('balance')}"
+                    )
+
+        print("=" * 80 + "\n")
 
     def _check_running_balances(self, transactions):
         """Walk rows in ORIGINAL statement order and verify that each printed
@@ -1461,7 +1851,24 @@ class PDFStatementParser(BaseParser):
             suspicious_pages = []
             total_start = time.time()
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(self._extract_chunk, client, c): c for c in chunks}
+                # futures = {executor.submit(self._extract_chunk, client, c): c for c in chunks}
+
+                normal_model = getattr(
+                    settings,
+                    "OPENAI_MODEL",
+                    "gpt-4.1-mini",
+                )
+
+                futures = {
+                    executor.submit(
+                        self._extract_chunk,
+                        client,
+                        c,
+                        normal_model,
+                        "low",
+                    ): c
+                    for c in chunks
+                }
                 for future in concurrent.futures.as_completed(futures):
                     chunk = futures[future]
                     res = future.result()
@@ -1505,6 +1912,20 @@ class PDFStatementParser(BaseParser):
 
         transactions = self._dedupe_checks(transactions)
 
+        print(f"\n🔍 Total transactions after dedupe: {len(transactions)}")
+
+        for i, tx in enumerate(transactions, 1):
+            print(
+                f"[TX {i}] "
+                f"account={tx.get('account_number')} | "
+                f"date={tx.get('date')} | "
+                f"amount={tx.get('amount')} | "
+                f"balance={tx.get('balance')} | "
+                f"description={tx.get('description', '')[:80]}"
+            )
+
+        self._debug_reconciliation(transactions)
+
         # --- Decide whether "no transactions" is legitimate -----------------
         if not transactions:
             beg, end = self.beginning_balance, self.ending_balance
@@ -1513,7 +1934,7 @@ class PDFStatementParser(BaseParser):
             # bank name alone must not turn a valid dormant statement into a
             # failure). An all-zero, bank-less result is still rejected.
             metadata_ok = (self.account_number != "Unknown Account"
-                           and (bank_known or (beg or 0) != 0 or (end or 0) != 0))
+                        and (bank_known or (beg or 0) != 0 or (end or 0) != 0))
             balances_agree = (beg is not None and end is not None and abs(beg - end) <= Decimal("0.01"))
             if metadata_ok and not bank_known:
                 self.review_notes.append("Bank name could not be detected for this statement.")
@@ -1529,7 +1950,7 @@ class PDFStatementParser(BaseParser):
         # Repair misread amounts from the printed running balance, then verify
         # (original statement order, before date-sorting).
         if transactions:
-            self._repair_from_running_balances(transactions)
+            # self._repair_from_running_balances(transactions)
             self._check_running_balances(transactions)
 
         transactions.sort(key=lambda x: x['date'])  # stable: keeps in-day order

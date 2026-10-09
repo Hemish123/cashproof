@@ -195,7 +195,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")  # choose a model you have access to
+# OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")  # choose a model you have access to
 OPENAI_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "90"))
 
 AZURE_OPENAI_API_KEY=os.getenv("AZURE_OPENAI_API_KEY")
@@ -207,3 +207,18 @@ AZURE_OPENAI_API_VERSION=os.getenv("AZURE_OPENAI_API_VERSION","2024-02-15-previe
 MAX_CONCURRENT_FILES = 5   # how many files process at once
 MAX_PDF_WORKERS = 15       # how many pages per file process at once
 PDF_PAGE_CHUNK_SIZE = 3
+
+
+OPENAI_MODEL = "gpt-4.1"
+OPENAI_ESCALATION_MODEL = "gpt-4.1"
+
+PDF_TEXT_CHUNK_SIZE = 5
+PDF_VISION_CHUNK_SIZE = 5
+
+PDF_VISION_DPI = 150
+PDF_VISION_RETRY_DPI = 200
+
+PDF_MAX_RETRY_PAGES = 12
+
+MAX_PDF_WORKERS = 3
+MAX_TOTAL_CONCURRENT_AI_CALLS = 15

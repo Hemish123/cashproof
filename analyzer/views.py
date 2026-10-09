@@ -359,6 +359,34 @@ def delete_upload_view(request, project_id, upload_id):
     from django.urls import reverse
     url = reverse('project_detail', kwargs={'project_id': project_id})
     return redirect(f"{url}#documents")
+
+@login_required(login_url='login')
+def bulk_delete_uploads_view(request, project_id):
+    if request.method == 'POST':
+        project = get_object_or_404(Project, id=project_id, user=request.user)
+        upload_ids = request.POST.getlist('upload_ids')
+        if not upload_ids:
+            messages.warning(request, "No documents selected for deletion.")
+        else:
+            uploads = StatementUpload.objects.filter(id__in=upload_ids, project=project)
+            deleted_count = 0
+            for upload in uploads:
+                if upload.file:
+                    try:
+                        if os.path.exists(upload.file.path):
+                            os.remove(upload.file.path)
+                    except Exception:
+                        pass
+                upload.delete()
+                deleted_count += 1
+            if deleted_count > 0:
+                detect_interbank_transactions(project_id=project.id)
+                messages.success(request, f"Deleted {deleted_count} document(s) and recalculated accounts.")
+    
+    from django.urls import reverse
+    url = reverse('project_detail', kwargs={'project_id': project_id})
+    return redirect(f"{url}#documents")
+
 @login_required(login_url='login')
 def delete_account_view(request, project_id, account_id):
     project = get_object_or_404(Project, id=project_id, user=request.user)
@@ -483,7 +511,12 @@ def bank_account_list_view(request):
             account = get_object_or_404(BankAccount, id=account_id, project__user=request.user)
             form = BankAccountForm(request.POST, instance=account)
             if form.is_valid():
-                form.save()
+                updated_account = form.save(commit=False)
+                new_project_id = request.POST.get('project_id')
+                if new_project_id:
+                    new_project = get_object_or_404(Project, id=new_project_id, user=request.user)
+                    updated_account.project = new_project
+                updated_account.save()
                 messages.success(request, "Bank account updated successfully.")
             else:
                 messages.error(request, "Error updating bank account.")

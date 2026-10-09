@@ -190,8 +190,11 @@ table.accounts-tbl tbody tr:last-child td{border-bottom:none}.accounts-tbl tbody
       <input type="hidden" name="account_id" id="ea_id">
       <div class="field">
         <label>Project <span style="color:var(--accent)">*</span></label>
-        <select name="project_id" id="ea_proj" disabled>
-          <option value="">Cannot change project</option>
+        <select name="project_id" id="ea_proj" required>
+          <option value="" disabled>Select a project</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
         </select>
       </div>
       <!-- <div class="field"><label>Account holder name</label><input type="text" name="account_holder" id="ea_holder"></div> -->
@@ -209,6 +212,7 @@ document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('clic
 
 function openEditAcct(id, proj_id, bank, num, holder) {
   if (document.getElementById('ea_id')) document.getElementById('ea_id').value = id;
+  if (document.getElementById('ea_proj')) document.getElementById('ea_proj').value = proj_id;
   if (document.getElementById('ea_bank')) document.getElementById('ea_bank').value = bank;
   if (document.getElementById('ea_number')) document.getElementById('ea_number').value = num;
   if (document.getElementById('ea_holder')) document.getElementById('ea_holder').value = holder;

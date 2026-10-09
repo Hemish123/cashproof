@@ -133,12 +133,12 @@
         + Add bank account
       </button>
       {% if accounts %}
-      <a href="{% url 'project_detail' project_id=project.id %}" class="btn primary" id="add-statements-btn">
-        + Add statements
+      <a href="{% url 'project_detail' project_id=project.id %}?action=add_statements" class="btn primary" id="add-statements-btn">
+        + Add statements / Reconciliations
       </a>
       {% else %}
       <button type="button" class="btn primary" id="add-statements-btn-disabled" disabled style="opacity:0.5;cursor:not-allowed;">
-        + Add statements
+        + Add statements / Reconciliations
       </button>
       {% endif %}
     </div>

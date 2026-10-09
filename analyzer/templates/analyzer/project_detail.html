@@ -212,21 +212,34 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
   <!-- TAB: Documents -->
   <div class="tab-content" id="content-docs">
     <div class="panel">
-      <div class="panel-head"><h2>Documents</h2><span class="panel-count">{{ uploads_count }} files</span></div>
-      {% if uploads %}{% for upload in uploads %}
-      <div class="doc-row">
-        <div>
-          <div class="doc-name">{{ upload.filename }}</div>
-          <div class="doc-meta">{{ upload.uploaded_at|date:"M d, Y H:i" }} &middot; {{ upload.status|lower }}</div>
+      <form method="POST" action="{% url 'bulk_delete_uploads' project_id=project.id %}" id="bulk-delete-form" onsubmit="triggerLoader('Deleting...','Updating cash flow metrics...')">
+        {% csrf_token %}
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <input type="checkbox" id="select-all-docs" onclick="toggleAllDocs(this)">
+            <h2 style="margin:0;">Documents</h2>
+            <span class="panel-count">{{ uploads_count }} files</span>
+          </div>
+          <button type="submit" class="btn sm" id="bulk-delete-btn" style="display:none; color:var(--flag); border-color:rgba(160,99,26,0.3);" onclick="return confirm('Delete selected documents?')">Delete Selected</button>
         </div>
-        <div style="display:flex;align-items:center;gap:12px">
-          <span class="doc-badge {% if upload.status == 'COMPLETED' %}parsed{% elif upload.status == 'FAILED' %}failed{% else %}pending{% endif %}"><span class="doc-badge-dot"></span>{% if upload.status == 'COMPLETED' %}Parsed{% elif upload.status == 'FAILED' %}Failed{% else %}Processing{% endif %}</span>
-          <a href="{% url 'delete_upload' project_id=project.id upload_id=upload.id %}" class="act-link rm" onclick="triggerLoader('Reprocessing...','Updating cash flow metrics...')" id="del-upl-{{ upload.id }}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </a>
+        {% if uploads %}{% for upload in uploads %}
+        <div class="doc-row">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <input type="checkbox" name="upload_ids" value="{{ upload.id }}" class="doc-checkbox" onchange="updateBulkDeleteBtn()">
+            <div>
+              <div class="doc-name">{{ upload.filename }}</div>
+              <div class="doc-meta">{{ upload.uploaded_at|date:"M d, Y H:i" }} &middot; {{ upload.status|lower }}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="doc-badge {% if upload.status == 'COMPLETED' %}parsed{% elif upload.status == 'FAILED' %}failed{% else %}pending{% endif %}"><span class="doc-badge-dot"></span>{% if upload.status == 'COMPLETED' %}Parsed{% elif upload.status == 'FAILED' %}Failed{% else %}Processing{% endif %}</span>
+            <a href="{% url 'delete_upload' project_id=project.id upload_id=upload.id %}" class="act-link rm" onclick="triggerLoader('Reprocessing...','Updating cash flow metrics...')" id="del-upl-{{ upload.id }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </a>
+          </div>
         </div>
-      </div>
-      {% endfor %}{% else %}<div class="empty-note">No documents uploaded yet. Use <strong>+ Add statements</strong> to upload.</div>{% endif %}
+        {% endfor %}{% else %}<div class="empty-note">No documents uploaded yet. Use <strong>+ Add statements</strong> to upload.</div>{% endif %}
+      </form>
     </div>
   </div>
 
@@ -277,7 +290,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
 <!-- MODAL: Add statements -->
 <div class="modal-overlay" id="addStmtModal">
   <div class="modal-box" style="max-width: 600px;">
-    <div class="modal-head"><h2>Add statements</h2><button type="button" class="modal-close" onclick="closeM('addStmtModal')">&#x2715;</button></div>
+    <div class="modal-head"><h2>Add statements / Reconciliations</h2><button type="button" class="modal-close" onclick="closeM('addStmtModal')">&#x2715;</button></div>
     <p class="modal-hint">Upload statements for the bank accounts mapped to {{ project.name }}.</p>
     {% if uploads %}
     <div style="margin-bottom:14px;font-size:12.5px;color:var(--ink-2);background:var(--panel-alt);padding:10px 14px;border-radius:6px;border:1px solid var(--line);max-height:150px;overflow-y:auto;">
@@ -426,6 +439,20 @@ if(fi) {
   });
 }
 function searchTbl(inId,tblId){let q=document.getElementById(inId).value.toUpperCase();document.getElementById(tblId).querySelectorAll('tbody tr').forEach(r=>{r.style.display=r.textContent.toUpperCase().includes(q)?'':'none';});}
+
+function toggleAllDocs(source) {
+  let checkboxes = document.querySelectorAll('.doc-checkbox');
+  for(let i=0; i<checkboxes.length; i++) {
+    checkboxes[i].checked = source.checked;
+  }
+  updateBulkDeleteBtn();
+}
+
+function updateBulkDeleteBtn() {
+  let anyChecked = document.querySelector('.doc-checkbox:checked') !== null;
+  document.getElementById('bulk-delete-btn').style.display = anyChecked ? 'inline-flex' : 'none';
+}
+
 function showToaster(msg, type='info', autoClose=false) {
   const tc = document.getElementById('toast-container') || (()=>{
     const d = document.createElement('div'); d.id='toast-container'; document.body.appendChild(d); return d;
@@ -457,5 +484,13 @@ myChart = new Chart(ctx,{type:'bar',data:{labels:{{ monthly_labels|safe }},datas
 {% endif %}
 const hm={'#cashflow':'cashflow','#documents':'docs','#ledger':'ledger','#interbank':'interbank','#exceptions':'exceptions'};
 if(hm[location.hash])switchTab(hm[location.hash]);
+
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('action') === 'add_statements') {
+  openM('addStmtModal');
+  // Optional: remove the parameter from the URL to avoid reopening on reload
+  const newUrl = window.location.pathname + window.location.hash;
+  window.history.replaceState({}, '', newUrl);
+}
 </script>
 {% endblock %}
