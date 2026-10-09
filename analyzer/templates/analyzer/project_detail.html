@@ -87,7 +87,7 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
 .lsub{font-size:13px;color:#9AA1B4;text-align:center;max-width:380px}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(21,31,53,.45);align-items:center;justify-content:center;padding:20px;z-index:200}
 .modal-overlay.active{display:flex;animation:fadein .2s ease}
-.modal-box{background:var(--panel);border-radius:var(--radius);max-width:480px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(21,31,53,.2)}
+.modal-box{background:var(--panel);border-radius:var(--radius);max-width:480px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(21,31,53,.2);max-height:calc(100vh - 40px);overflow-y:auto}
 .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.modal-head h2{font-size:17px}
 .modal-hint{font-size:13px;color:var(--muted);margin-bottom:22px}
 .modal-close{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:2px 6px}.modal-close:hover{color:var(--ink)}

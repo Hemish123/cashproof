@@ -4,6 +4,12 @@ from openpyxl.utils import get_column_letter
 from decimal import Decimal
 import re
 from datetime import datetime
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+def sanitize_str(val):
+    if isinstance(val, str):
+        return ILLEGAL_CHARACTERS_RE.sub('', val)
+    return val
 
 def format_period(start_date, end_date):
     if not start_date or not end_date:
@@ -74,9 +80,9 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     primary_bank = bank_accounts[0].bank_name if bank_accounts else "Unknown Bank"
 
     # ==================== BUILD EXECUTIVE SUMMARY ====================
-    ws_summary["A1"] = "Bank Statement Cash Flow Analysis Report"
+    ws_summary["A1"] = sanitize_str("Bank Statement Cash Flow Analysis Report")
     ws_summary["A1"].font = font_title
-    ws_summary["A2"] = f"Executive Aggregates & Standardization Summary — {company_name} ({primary_bank})"
+    ws_summary["A2"] = sanitize_str(f"Executive Aggregates & Standardization Summary — {company_name} ({primary_bank})")
     ws_summary["A2"].font = font_subtitle
 
     # Table Headers starting at row 4
@@ -172,7 +178,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         totals['ending_balance'] += acc.ending_balance
 
         for col_idx, val in enumerate(row_data, start=1):
-            cell = ws_summary.cell(row=current_row, column=col_idx, value=val)
+            cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
             cell.font = font_body
             cell.border = border_all
             
@@ -231,7 +237,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         
         # Write reconciliation metrics block
         ws_summary.cell(row=current_row, column=1, value="Source Statement").font = font_total
-        ws_summary.cell(row=current_row, column=2, value=f"{acc.bank_name} — {period_str}").font = font_body
+        ws_summary.cell(row=current_row, column=2, value=sanitize_str(f"{acc.bank_name} — {period_str}")).font = font_body
         current_row += 1
         
         ws_summary.cell(row=current_row, column=1, value="Beginning Balance").font = font_total
@@ -298,7 +304,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
                 upload.total_payments
             ]
             for col_idx, val in enumerate(row_data, start=1):
-                cell = ws_summary.cell(row=current_row, column=col_idx, value=val)
+                cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
                 cell.font = font_body
                 cell.border = border_all
                 if col_idx in (1, 2, 3):
@@ -318,13 +324,13 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         title = acc.account_title or "Operating"
         # Simplify title for the ledger summary (e.g., just first word or remove "Account")
         title_simple = title.replace(" Account", "").strip()
-        account_summaries.append(f"{acc.account_number} {title_simple}")
+        account_summaries.append(sanitize_str(f"{acc.account_number} {title_simple}"))
         
     accounts_str = ", ".join(account_summaries)
     
-    ws_ledger["A1"] = "Standardized Transactions Ledger"
+    ws_ledger["A1"] = sanitize_str("Standardized Transactions Ledger")
     ws_ledger["A1"].font = font_title
-    ws_ledger["A2"] = f"Combined granular transaction logs across all {primary_bank} accounts ({accounts_str}) — {company_name}"
+    ws_ledger["A2"] = sanitize_str(f"Combined granular transaction logs across all {primary_bank} accounts ({accounts_str}) — {company_name}")
     ws_ledger["A2"].font = font_subtitle
 
     ledger_headers = [
@@ -367,7 +373,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         ]
 
         for col_idx, val in enumerate(row_data, start=1):
-            cell = ws_ledger.cell(row=current_ledger_row, column=col_idx, value=val)
+            cell = ws_ledger.cell(row=current_ledger_row, column=col_idx, value=sanitize_str(val))
             cell.font = font_body
             cell.border = border_all
 
@@ -397,8 +403,9 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         
         # Make sheet title unique by appending start date or an index
         date_suffix = acc.start_date.strftime('%b%y') if acc.start_date else str(idx)
-        sheet_title = f"{short_bank}_{acc.account_number[-4:]}_{date_suffix}"
-        sheet_title = re.sub(r'[\\/*?:\[\]]', '', sheet_title)[:30]
+        acct_num_str = acc.account_number or ""
+        sheet_title = f"{short_bank}_{acct_num_str[-4:]}_{date_suffix}"
+        sheet_title = sanitize_str(re.sub(r'[\\/*?:\[\]]', '', sheet_title))[:30]
         
         # openpyxl will automatically append '1', '2' if there is still a conflict,
         # but it's cleaner to handle it manually.
@@ -444,7 +451,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         cell_h1.alignment = align_left
         cell_h1.border = border_all
         
-        cell_h2 = ws_acc.cell(row=1, column=2, value=acc.bank_name)
+        cell_h2 = ws_acc.cell(row=1, column=2, value=sanitize_str(acc.bank_name))
         cell_h2.font = font_header
         cell_h2.fill = fill_header_summary
         cell_h2.alignment = align_left
@@ -456,7 +463,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell_lbl.alignment = align_left
             cell_lbl.border = border_all
             
-            cell_val = ws_acc.cell(row=idx, column=2, value=val)
+            cell_val = ws_acc.cell(row=idx, column=2, value=sanitize_str(val))
             cell_val.font = font_body
             cell_val.border = border_all
             
