@@ -44,8 +44,8 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     ws_summary = wb.create_sheet(title="Executive Summary")
     ws_summary.views.sheetView[0].showGridLines = True
 
-    # 2. Create Transaction Ledger Sheet
-    ws_ledger = wb.create_sheet(title="Transaction Ledger")
+    # 2. Create Transaction Details Sheet
+    ws_ledger = wb.create_sheet(title="Transaction Details")
     ws_ledger.views.sheetView[0].showGridLines = True
 
     # ---- Style definitions ----
@@ -72,6 +72,12 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     align_right = Alignment(horizontal="right", vertical="center")
 
     num_format_currency = '#,##0.00;(#,##0.00);"-";@'
+    num_format_signed_currency = '+$#,##0.00;-$#,##0.00;"$0.00";@'
+
+    font_credit = Font(name="Segoe UI", size=11, color="1E6E52")
+    font_debit = Font(name="Segoe UI", size=11, color="C00000")
+    font_credit_bold = Font(name="Segoe UI", size=11, bold=True, color="1E6E52")
+    font_debit_bold = Font(name="Segoe UI", size=11, bold=True, color="C00000")
 
     company_name = "Kwik Goal LTD"
     if bank_accounts and bank_accounts[0].account_holder:
@@ -328,14 +334,14 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         
     accounts_str = ", ".join(account_summaries)
     
-    ws_ledger["A1"] = sanitize_str("Standardized Transactions Ledger")
+    ws_ledger["A1"] = sanitize_str("Standardized Transaction Details")
     ws_ledger["A1"].font = font_title
     ws_ledger["A2"] = sanitize_str(f"Combined granular transaction logs across all {primary_bank} accounts ({accounts_str}) — {company_name}")
     ws_ledger["A2"].font = font_subtitle
 
     ledger_headers = [
         "Date", "Bank Name", "Account Number", "Account Title", "Statement Ref", "Description",
-        "Amount", "Category", "Interbank Self-Transfer?"
+        "Debit/Credit", "Amount", "Category", "Interbank Self-Transfer?"
     ]
     
     for col_idx, header in enumerate(ledger_headers, start=1):
@@ -360,6 +366,8 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         month_abbr = tx.date.strftime('%b')
         stmt_ref = f"{tx.account.account_number} - {month_abbr} {tx.date.year}"
         
+        debit_credit = "Credit" if (tx.amount is not None and tx.amount >= 0) else "Debit"
+
         row_data = [
             tx.date.strftime("%Y-%m-%d"),
             tx.account.bank_name,
@@ -367,6 +375,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             tx.account.account_title or "Operating Account",
             stmt_ref,
             tx.description,
+            debit_credit,
             tx.amount,
             tx.category,
             "Yes" if tx.is_interbank else "No"
@@ -377,17 +386,28 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell.font = font_body
             cell.border = border_all
 
-            if col_idx in (1, 9):
+            if col_idx in (1, 10):
                 cell.alignment = align_center
-            elif col_idx in (2, 3, 4, 5, 6, 8):
-                cell.alignment = align_left
             elif col_idx == 7:
+                cell.alignment = align_center
+                if debit_credit == "Credit":
+                    cell.font = font_credit_bold
+                else:
+                    cell.font = font_debit_bold
+            elif col_idx in (2, 3, 4, 5, 6, 9):
+                cell.alignment = align_left
+            elif col_idx == 8:
                 cell.alignment = align_right
-                cell.number_format = num_format_currency
+                cell.number_format = num_format_signed_currency
+                if tx.amount is not None:
+                    if tx.amount >= 0:
+                        cell.font = font_credit
+                    else:
+                        cell.font = font_debit
 
             if tx.is_interbank:
                 cell.fill = fill_interbank
-                if col_idx == 9:
+                if col_idx == 10:
                     cell.font = font_total
             else:
                 if idx % 2 == 1:

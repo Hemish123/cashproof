@@ -78,6 +78,8 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
 .badge{display:inline-flex;align-items:center;font-size:11px;font-weight:500;padding:2px 7px;border-radius:100px}
 .badge.ib{background:var(--flag-bg);color:var(--flag)}.badge.ext{background:var(--panel-alt);color:var(--muted)}
 .badge.cat{background:var(--panel-alt);color:var(--ink-2);border:1px solid var(--line)}
+.badge.credit{background:var(--verified-bg);color:var(--verified)}
+.badge.debit{background:var(--flag-bg);color:var(--flag)}
 .tx-amt{font-weight:500;text-align:right;white-space:nowrap}.tx-amt.pos{color:var(--verified)}.tx-amt.neg{color:var(--flag)}
 .empty-note{padding:36px 20px;text-align:center;color:var(--muted);font-size:13px}
 #loading-overlay{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(21,31,53,.82);backdrop-filter:blur(8px);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#fff}
@@ -250,9 +252,9 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#767F8E" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input type="text" id="ledger-search" placeholder="Search transactions..." oninput="searchTbl('ledger-search','ledger-tbl')"></div>
     </div>
     {% if all_transactions %}
-    <div class="tbl-wrap"><table class="ledger" id="ledger-tbl"><thead><tr><th>Date</th><th>Bank / Account</th><th>Description</th><th>Category</th><th>Type</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="ledger" id="ledger-tbl"><thead><tr><th>Date</th><th>Bank / Account</th><th>Description</th><th>Category</th><th>Type</th><th>Debit/Credit</th><th style="text-align:right">Amount</th></tr></thead><tbody>
     {% for tx in all_transactions %}
-    <tr><td class="tx-date">{{ tx.date|date:"Y-m-d" }}</td><td><div class="td-bank">{{ tx.account.bank_name }}</div><div class="td-acc">...{{ tx.account.account_number|slice:"-4:" }}</div></td><td class="td-desc" title="{{ tx.description }}">{{ tx.description }}</td><td><span class="badge cat">{{ tx.category }}</span></td><td>{% if tx.is_interbank %}<span class="badge ib">Interbank</span>{% else %}<span class="badge ext">External</span>{% endif %}</td><td>{% if tx.amount >= 0 %}<span class="tx-amt pos">+${{ tx.amount|floatformat:2 }}</span>{% else %}<span class="tx-amt neg">-${{ tx.amount|custom_abs|floatformat:2 }}</span>{% endif %}</td></tr>
+    <tr><td class="tx-date">{{ tx.date|date:"Y-m-d" }}</td><td><div class="td-bank">{{ tx.account.bank_name }}</div><div class="td-acc">...{{ tx.account.account_number|slice:"-4:" }}</div></td><td class="td-desc" title="{{ tx.description }}">{{ tx.description }}</td><td><span class="badge cat">{{ tx.category }}</span></td><td>{% if tx.is_interbank %}<span class="badge ib">Interbank</span>{% else %}<span class="badge ext">External</span>{% endif %}</td><td>{% if tx.amount >= 0 %}<span class="badge credit">Credit</span>{% else %}<span class="badge debit">Debit</span>{% endif %}</td><td>{% if tx.amount >= 0 %}<span class="tx-amt pos">+${{ tx.amount|floatformat:2 }}</span>{% else %}<span class="tx-amt neg">-${{ tx.amount|custom_abs|floatformat:2 }}</span>{% endif %}</td></tr>
     {% endfor %}
     </tbody></table></div>
     {% else %}<div class="panel"><div class="empty-note">No transactions yet. Upload and parse statements first.</div></div>{% endif %}
@@ -265,9 +267,9 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#767F8E" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input type="text" id="ib-search" placeholder="Search..." oninput="searchTbl('ib-search','ib-tbl')"></div>
     </div>
     {% if interbank_transactions %}
-    <div class="tbl-wrap"><table class="ledger" id="ib-tbl"><thead><tr><th>Date</th><th>Bank / Account</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="ledger" id="ib-tbl"><thead><tr><th>Date</th><th>Bank / Account</th><th>Description</th><th>Category</th><th>Debit/Credit</th><th style="text-align:right">Amount</th></tr></thead><tbody>
     {% for tx in interbank_transactions %}
-    <tr><td class="tx-date">{{ tx.date|date:"Y-m-d" }}</td><td><div class="td-bank">{{ tx.account.bank_name }}</div><div class="td-acc">...{{ tx.account.account_number|slice:"-4:" }}</div></td><td class="td-desc" title="{{ tx.description }}">{{ tx.description }}</td><td><span class="badge cat">{{ tx.category }}</span></td><td>{% if tx.amount >= 0 %}<span class="tx-amt pos">+${{ tx.amount|floatformat:2 }}</span>{% else %}<span class="tx-amt neg">-${{ tx.amount|custom_abs|floatformat:2 }}</span>{% endif %}</td></tr>
+    <tr><td class="tx-date">{{ tx.date|date:"Y-m-d" }}</td><td><div class="td-bank">{{ tx.account.bank_name }}</div><div class="td-acc">...{{ tx.account.account_number|slice:"-4:" }}</div></td><td class="td-desc" title="{{ tx.description }}">{{ tx.description }}</td><td><span class="badge cat">{{ tx.category }}</span></td><td>{% if tx.amount >= 0 %}<span class="badge credit">Credit</span>{% else %}<span class="badge debit">Debit</span>{% endif %}</td><td>{% if tx.amount >= 0 %}<span class="tx-amt pos">+${{ tx.amount|floatformat:2 }}</span>{% else %}<span class="tx-amt neg">-${{ tx.amount|custom_abs|floatformat:2 }}</span>{% endif %}</td></tr>
     {% endfor %}
     </tbody></table></div>
     {% else %}<div class="panel"><div class="empty-note">No interbank transfers detected yet.</div></div>{% endif %}
@@ -323,10 +325,10 @@ table.ledger tbody tr:last-child td{border-bottom:none}.ledger tbody tr:hover{ba
       {% endif %}
       <div class="modal-actions" style="flex-wrap: wrap;">
         <button type="button" class="btn" onclick="closeM('addStmtModal')">Cancel</button>
-        {% if batches %}
+        {% if batches and uploads %}
         <button type="submit" name="upload_action" value="new_batch" class="btn" id="add-new-batch-btn">Analyze as New Batch</button>
         {% endif %}
-        <button type="submit" name="upload_action" value="current_batch" class="btn primary" id="add-reanalyze-btn">Add to Current Batch &amp; Re-analyze</button>
+        <button type="submit" name="upload_action" value="current_batch" class="btn primary" id="add-reanalyze-btn">{% if uploads %}Add and Re-analyze{% else %}Analyze{% endif %}</button>
       </div>
     </form>
   </div>

@@ -3,7 +3,8 @@ from decimal import Decimal
 import datetime
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from .models import StatementUpload, BankAccount, Transaction
+from django.contrib.auth.models import User
+from .models import StatementUpload, BankAccount, Transaction, Project, AnalysisBatch
 from .parsers.base import BaseParser
 from .services import detect_interbank_transactions
 from .parsers.csv_excel import CSVExcelParser
@@ -240,3 +241,126 @@ class InterbankAndAggregationTests(TestCase):
         self.assertEqual(self.savings.total_interbank_payments, Decimal("250.00"))
         self.assertEqual(self.savings.net_deposits, Decimal("0.00"))
         self.assertEqual(self.savings.net_payments, Decimal("0.00"))
+
+    def test_statement_keyword_interbank_detection(self):
+        # 1. Sweep account paired transfer across accounts (no account numbers in description)
+        tx_sweep_out = Transaction.objects.create(
+            account=self.checking,
+            date=datetime.date(2026, 9, 1),
+            description="Sweep Account Out",
+            amount=Decimal("-1000.00")
+        )
+        tx_sweep_in = Transaction.objects.create(
+            account=self.savings,
+            date=datetime.date(2026, 9, 1),
+            description="Sweep In",
+            amount=Decimal("1000.00")
+        )
+
+        # 2. TRNSFR keyword paired transfer (no account numbers)
+        tx_trnsfr_out = Transaction.objects.create(
+            account=self.checking,
+            date=datetime.date(2026, 9, 5),
+            description="ONLINE TRNSFR OUT",
+            amount=Decimal("-750.00")
+        )
+        tx_trnsfr_in = Transaction.objects.create(
+            account=self.savings,
+            date=datetime.date(2026, 9, 6),
+            description="TRNSFR IN",
+            amount=Decimal("750.00")
+        )
+
+        # 3. Standalone unmatched sweep/transfer keywords (no counterpart account in system)
+        tx_unmatched_sweep = Transaction.objects.create(
+            account=self.checking,
+            date=datetime.date(2026, 9, 10),
+            description="Daily Sweep to External Money Market",
+            amount=Decimal("-5000.00")
+        )
+        tx_unmatched_xfer = Transaction.objects.create(
+            account=self.savings,
+            date=datetime.date(2026, 9, 12),
+            description="XFER From External Subsidiary",
+            amount=Decimal("2000.00")
+        )
+
+        # 4. Bank fee containing transfer word - should NOT be interbank
+        tx_fee = Transaction.objects.create(
+            account=self.checking,
+            date=datetime.date(2026, 9, 15),
+            description="Wire Transfer Fee",
+            amount=Decimal("-25.00")
+        )
+
+        # 5. Regular commercial transaction
+        tx_regular = Transaction.objects.create(
+            account=self.checking,
+            date=datetime.date(2026, 9, 18),
+            description="Staples Office Supplies",
+            amount=Decimal("-85.00")
+        )
+
+        detect_interbank_transactions()
+
+        tx_sweep_out.refresh_from_db()
+        tx_sweep_in.refresh_from_db()
+        tx_trnsfr_out.refresh_from_db()
+        tx_trnsfr_in.refresh_from_db()
+        tx_unmatched_sweep.refresh_from_db()
+        tx_unmatched_xfer.refresh_from_db()
+        tx_fee.refresh_from_db()
+        tx_regular.refresh_from_db()
+
+        # Assert paired keyword matches
+        self.assertTrue(tx_sweep_out.is_interbank)
+        self.assertTrue(tx_sweep_in.is_interbank)
+        self.assertEqual(tx_sweep_out.interbank_match_status, 'confirmed_account_and_amount')
+        self.assertEqual(tx_sweep_in.interbank_match_status, 'confirmed_account_and_amount')
+
+        self.assertTrue(tx_trnsfr_out.is_interbank)
+        self.assertTrue(tx_trnsfr_in.is_interbank)
+        self.assertEqual(tx_trnsfr_out.interbank_match_status, 'confirmed_account_and_amount')
+
+        # Assert unmatched keyword matches (flagged as interbank)
+        self.assertTrue(tx_unmatched_sweep.is_interbank)
+        self.assertEqual(tx_unmatched_sweep.interbank_match_status, 'unverified_keyword_match')
+        self.assertTrue(tx_unmatched_xfer.is_interbank)
+        self.assertEqual(tx_unmatched_xfer.interbank_match_status, 'unverified_keyword_match')
+
+        # Assert fee and regular expense are NOT interbank
+        self.assertFalse(tx_fee.is_interbank)
+        self.assertFalse(tx_regular.is_interbank)
+
+
+class ProjectDetailModalButtonTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='tester', password='password123')
+        self.client.login(username='tester', password='password123')
+        self.project = Project.objects.create(name='Test Project', user=self.user)
+
+    def test_first_upload_button_shows_analyze(self):
+        from django.urls import reverse
+        url = reverse('project_detail', kwargs={'project_id': self.project.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="add-reanalyze-btn">Analyze</button>')
+        self.assertNotContains(response, 'Add and Re-analyze')
+        self.assertNotContains(response, 'Analyze as New Batch')
+
+    def test_second_upload_button_shows_add_and_reanalyze(self):
+        from django.urls import reverse
+        batch = AnalysisBatch.objects.create(project=self.project, name="Batch 1")
+        StatementUpload.objects.create(
+            project=self.project,
+            batch=batch,
+            user=self.user,
+            file=SimpleUploadedFile("stmt.pdf", b"dummy content"),
+            status="COMPLETED"
+        )
+        url = reverse('project_detail', kwargs={'project_id': self.project.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="add-reanalyze-btn">Add and Re-analyze</button>')
+        self.assertContains(response, 'id="add-new-batch-btn">Analyze as New Batch</button>')
+

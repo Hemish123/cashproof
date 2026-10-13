@@ -20,6 +20,31 @@ def _date_confidence(outflow_date, inflow_date):
         return 'high'
     return 'medium'
 
+STATEMENT_INTERBANK_REGEX = re.compile(
+    r'\b('
+    r'sweeps?|'                                  # Sweep, Sweeps, Sweep Account, Auto Sweep, Daily Sweep
+    r'transfers?(?:\s+(?:in|out|to|from|into))?|' # Transfers In/Out/To/From or Transfer, Transfers
+    r'trnsfrs?|'                                 # TRNSFR, TRNSFRS
+    r'xfers?|'                                   # XFER, XFERS
+    r'trans\b|'                                  # TRANS (standalone word)
+    r'internal\s+transfer|'                      # Internal Transfer
+    r'book\s+transfer|'                          # Book Transfer
+    r'inter-?account|'                           # Inter-account, Interaccount
+    r'online\s+transfer|'                        # Online Transfer
+    r'funds\s+transfer|'                         # Funds Transfer
+    r'account\s+transfer|'                       # Account Transfer
+    r'acct\s+transfer|'                          # Acct Transfer
+    r'self-?transfers?|'                         # Self Transfer
+    r'credit\s+card\s+payment'                   # Credit Card Payment
+    r')\b',
+    re.IGNORECASE
+)
+
+INTERBANK_EXCLUSION_REGEX = re.compile(
+    r'\b(?:transfer|trans|xfer|trnsfr|wire|sweep|service)\s+fees?\b',
+    re.IGNORECASE
+)
+
 def detect_interbank_transactions(project_id=None, batch_id=None):
     if batch_id is not None:
         user_accounts = list(BankAccount.objects.filter(batch_id=batch_id))
@@ -41,9 +66,10 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
     acc_by_id = {acc.id: acc for acc in user_accounts}
     project_accounts = {}
     for acc in user_accounts:
-        if acc.project_id not in project_accounts:
-            project_accounts[acc.project_id] = []
-        project_accounts[acc.project_id].append(acc)
+        pkey = acc.project_id if acc.project_id is not None else (f"upload_{acc.upload_id}" if acc.upload_id is not None else 0)
+        if pkey not in project_accounts:
+            project_accounts[pkey] = []
+        project_accounts[pkey].append(acc)
 
     paired_txs = set()
     to_update = []
@@ -54,20 +80,24 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
             
         desc_cleaned = _clean(tx.description)
         own_acc = acc_by_id.get(tx.account_id)
-        if not own_acc or not own_acc.project_id:
+        if not own_acc:
             continue
 
         target_amount = abs(tx.amount)
         min_date, max_date = _business_day_window(tx.date, max_business_days=3)
         
-        sibling_accounts = [a for a in project_accounts[own_acc.project_id] if a.id != own_acc.id]
+        own_pkey = own_acc.project_id if own_acc.project_id is not None else (f"upload_{own_acc.upload_id}" if own_acc.upload_id is not None else 0)
+        sibling_accounts = [a for a in project_accounts.get(own_pkey, []) if a.id != own_acc.id]
         
         matched_other = None
         confidence = None
 
-        is_reconciliation = (own_acc.upload and own_acc.upload.source_type == 'RECONCILIATION')
+        is_reconciliation = bool(own_acc.upload and own_acc.upload.source_type == 'RECONCILIATION')
         desc_lower = tx.description.lower()
-        has_recon_keywords = is_reconciliation and ('transfer' in desc_lower or 'trans' in desc_lower)
+        
+        is_fee = bool(INTERBANK_EXCLUSION_REGEX.search(tx.description))
+        has_recon_keywords = (not is_fee) and is_reconciliation and bool(re.search(r'\b(transfer|trans)\b', desc_lower))
+        has_stmt_keywords = (not is_fee) and (not is_reconciliation) and bool(STATEMENT_INTERBANK_REGEX.search(tx.description))
 
         for sib in sibling_accounts:
             sib_num = _clean(sib.account_number)
@@ -80,7 +110,7 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
                 elif len(sib_num) >= 4 and any(num.endswith(sib_num[-4:]) for num in numbers_in_desc):
                     is_referenced = True
 
-            if is_referenced or has_recon_keywords:
+            if is_referenced or has_recon_keywords or has_stmt_keywords:
                 candidates = []
                 for other_tx in all_txs:
                     if other_tx.id in paired_txs or other_tx.account_id != sib.id:
@@ -116,7 +146,7 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
             paired_txs.add(tx.id)
             paired_txs.add(matched_other.id)
             to_update.extend([tx, matched_other])
-        elif has_recon_keywords and tx.interbank_match_status is None:
+        elif (has_recon_keywords or has_stmt_keywords) and tx.interbank_match_status is None:
             tx.is_interbank = True
             tx.interbank_confidence = 'low'
             tx.interbank_match_status = 'unverified_keyword_match'

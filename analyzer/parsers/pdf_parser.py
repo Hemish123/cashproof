@@ -671,6 +671,7 @@ import datetime
 import io
 import json
 import logging
+import os
 import random
 import re
 import threading
@@ -760,16 +761,126 @@ class PDFStatementParser(BaseParser):
         except (InvalidOperation, ValueError):
             return None
 
-    def _parse_iso_date(self, d_str):
+    def _parse_iso_date(self, d_str, fallback_year=None):
         if not d_str:
             return None
         try:
             return datetime.datetime.strptime(str(d_str).strip(), "%Y-%m-%d").date()
         except Exception:
             try:
-                return self.parse_date(d_str)
+                year = fallback_year or getattr(self, 'statement_year', None)
+                if not year and self.end_date:
+                    year = self.end_date.year
+                elif not year and self.start_date:
+                    year = self.start_date.year
+                return self.parse_date(d_str, year=year)
             except Exception:
                 return None
+
+    def _find_statement_year_from_text(self, text):
+        """
+        Attempts to detect the true statement year by checking:
+        1. Upload filename (e.g. 20260630, 2026-06-30).
+        2. Statement date / period header phrases.
+        3. Lines without copyright notices, avoiding footer boilerplate.
+        """
+        base_name = os.path.basename(getattr(self, 'file_path', '') or '')
+        # 1. Filename match (e.g. _20260630_ or 2026-06-30 or 2026_06)
+        fn_match = re.search(r'\b(20\d{2})[_-]?(0[1-9]|1[0-2])[_-]?([0-3]\d)?\b', base_name)
+        if fn_match:
+            return int(fn_match.group(1))
+
+        if not text:
+            return None
+
+        # 2. Key phrases in text: 'Statement Period: ... 2026', 'Closing Date: ... 2026', 'Through 01/31/2026'
+        period_phrase = re.search(
+            r'(?:statement\s+(?:period|date|dates|cycle)|period\s+covered|closing\s+date|through|thru|as\s+of)\b([^\n\r]{0,100})',
+            text, re.IGNORECASE
+        )
+        if period_phrase:
+            years_in_phrase = [int(y) for y in re.findall(r'\b(20\d{2})\b', period_phrase.group(1))]
+            if years_in_phrase:
+                return years_in_phrase[-1]  # Return the closing/ending year in the statement period phrase
+
+        # 3. Look for explicit dates like MM/DD/YYYY on lines without copyright/phone
+        for line in text.splitlines():
+            low = line.lower()
+            if any(term in low for term in ('©', 'copyright', 'phone', 'call', 'tel', 'box ', 'fdic', 'rights reserved')):
+                continue
+            date_match = re.search(r'\b(?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])[-/.](20\d{2})\b', line)
+            if date_match:
+                return int(date_match.group(1))
+            date_str_match = re.search(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+(20\d{2})\b', line, re.IGNORECASE)
+            if date_str_match:
+                return int(date_str_match.group(1))
+
+        return None
+
+    def _harmonize_transaction_years(self, transactions):
+        """
+        Sanitizes and harmonizes transaction years:
+        - Corrects hallucinated outlier years against statement period.
+        - Handles Dec-to-Jan year rollover.
+        - Harmonizes rare outlier years to the majority statement year.
+        """
+        if not transactions:
+            return
+
+        stmt_year = getattr(self, 'statement_year', None) or (
+            self.end_date.year if self.end_date else (self.start_date.year if self.start_date else None)
+        )
+
+        is_cross_year = (
+            self.start_date and self.end_date and self.start_date.year != self.end_date.year
+        )
+
+        # 1. If cross-year statement (e.g. Dec 2025 to Jan 2026)
+        if is_cross_year:
+            for tx in transactions:
+                d = tx.get('date')
+                if not isinstance(d, datetime.date):
+                    continue
+                if d.month <= self.end_date.month and d.year != self.end_date.year:
+                    try:
+                        tx['date'] = d.replace(year=self.end_date.year)
+                    except ValueError:
+                        pass
+                elif d.month >= self.start_date.month and d.year != self.start_date.year:
+                    try:
+                        tx['date'] = d.replace(year=self.start_date.year)
+                    except ValueError:
+                        pass
+            return
+
+        # 2. If single statement year is known (e.g. 2026)
+        if stmt_year:
+            for tx in transactions:
+                d = tx.get('date')
+                if isinstance(d, datetime.date) and d.year != stmt_year:
+                    try:
+                        tx['date'] = d.replace(year=stmt_year)
+                    except ValueError:
+                        pass
+            return
+
+        # 3. If neither was known, determine the majority year (>70% of rows)
+        year_counts = {}
+        for tx in transactions:
+            d = tx.get('date')
+            if isinstance(d, datetime.date):
+                year_counts[d.year] = year_counts.get(d.year, 0) + 1
+
+        if year_counts:
+            majority_year = max(year_counts, key=year_counts.get)
+            if year_counts[majority_year] >= 0.7 * len(transactions):
+                for tx in transactions:
+                    d = tx.get('date')
+                    if isinstance(d, datetime.date) and d.year != majority_year:
+                        try:
+                            tx['date'] = d.replace(year=majority_year)
+                        except ValueError:
+                            pass
 
     # ------------------------------------------------------------------
     # Entry point
@@ -1204,6 +1315,14 @@ class PDFStatementParser(BaseParser):
         if not self.end_date:
             self.end_date = self._parse_iso_date(meta_res.get("end_date"))
 
+        # Fallback year detection if header metadata didn't provide dates
+        if not getattr(self, 'statement_year', None):
+            self.statement_year = self._find_statement_year_from_text(header_text)
+            if not self.statement_year and self.end_date:
+                self.statement_year = self.end_date.year
+            elif not self.statement_year and self.start_date:
+                self.statement_year = self.start_date.year
+
         accounts = []
         for a in (meta_res.get("accounts") or []):
             if isinstance(a, dict) and a.get('account_number'):
@@ -1229,8 +1348,32 @@ class PDFStatementParser(BaseParser):
             str(a.get('account_number')) for a in getattr(self, 'detected_accounts', []) if a.get('account_number')
         ) or str(self.account_number)
         period = ""
+        stmt_year = getattr(self, 'statement_year', None) or (
+            self.end_date.year if self.end_date else (self.start_date.year if self.start_date else None)
+        )
+
         if self.start_date and self.end_date:
             period = f"Statement period (from header metadata): {self.start_date} to {self.end_date}.\n"
+            if self.start_date.year == self.end_date.year:
+                period += (
+                    f"CRITICAL YEAR RULE: All transactions in this statement occurred in year {self.start_date.year}. "
+                    f"When dates on the page omit the year (e.g. '1/06' or '1/6'), you MUST output '{self.start_date.year}-01-06'. "
+                    f"Never use an older year from copyright notices or disclaimers.\n"
+                )
+            else:
+                period += (
+                    f"CRITICAL YEAR ROLLOVER: This statement spans two years ({self.start_date.year} to {self.end_date.year}). "
+                    f"Transactions in months >= {self.start_date.month} belong to {self.start_date.year}. "
+                    f"Transactions in months <= {self.end_date.month} belong to {self.end_date.year} "
+                    f"(e.g. '1/6' must be '{self.end_date.year}-01-06', NOT '{self.start_date.year}-01-06').\n"
+                )
+        elif stmt_year:
+            period = (
+                f"Statement year: {stmt_year}.\n"
+                f"CRITICAL YEAR RULE: All transactions in this statement occurred in year {stmt_year}. "
+                f"When dates on the page omit the year (e.g. '1/06' or '1/6'), you MUST output '{stmt_year}-01-06'. "
+                f"Never invent older years from copyright notices.\n"
+            )
 
         return (
             f"Extract ALL transaction line items from page(s) {page_nums} of this bank statement.\n"
@@ -1912,17 +2055,17 @@ class PDFStatementParser(BaseParser):
 
         transactions = self._dedupe_checks(transactions)
 
-        print(f"\n🔍 Total transactions after dedupe: {len(transactions)}")
+        # print(f"\n🔍 Total transactions after dedupe: {len(transactions)}")
 
-        for i, tx in enumerate(transactions, 1):
-            print(
-                f"[TX {i}] "
-                f"account={tx.get('account_number')} | "
-                f"date={tx.get('date')} | "
-                f"amount={tx.get('amount')} | "
-                f"balance={tx.get('balance')} | "
-                f"description={tx.get('description', '')[:80]}"
-            )
+        # for i, tx in enumerate(transactions, 1):
+        #     print(
+        #         f"[TX {i}] "
+        #         f"account={tx.get('account_number')} | "
+        #         f"date={tx.get('date')} | "
+        #         f"amount={tx.get('amount')} | "
+        #         f"balance={tx.get('balance')} | "
+        #         f"description={tx.get('description', '')[:80]}"
+        #     )
 
         self._debug_reconciliation(transactions)
 
@@ -1952,6 +2095,7 @@ class PDFStatementParser(BaseParser):
         if transactions:
             # self._repair_from_running_balances(transactions)
             self._check_running_balances(transactions)
+            self._harmonize_transaction_years(transactions)
 
         transactions.sort(key=lambda x: x['date'])  # stable: keeps in-day order
         if transactions:
@@ -2053,11 +2197,7 @@ class PDFStatementParser(BaseParser):
             first_text = (pdf.pages[0].extract_text() or "") if pdf.pages else ""
             self._extract_metadata_from_text(full_text, first_page_text=first_text)
 
-            for page in pdf.pages:
-                year_match = re.search(r'\b(20\d{2})\b', page.extract_text() or "")
-                if year_match:
-                    self.statement_year = int(year_match.group(1))
-                    break
+            self.statement_year = self._find_statement_year_from_text(full_text)
 
             for page in pdf.pages:
                 for table in page.extract_tables():
@@ -2111,6 +2251,7 @@ class PDFStatementParser(BaseParser):
                 "rule-based parser found no transaction table)."
             )
 
+        self._harmonize_transaction_years(transactions)
         sorted_txs = sorted(transactions, key=lambda x: x['date'])
         self.start_date = sorted_txs[0]['date']
         self.end_date = sorted_txs[-1]['date']
