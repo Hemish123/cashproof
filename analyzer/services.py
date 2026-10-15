@@ -20,25 +20,25 @@ def _date_confidence(outflow_date, inflow_date):
         return 'high'
     return 'medium'
 
-STATEMENT_INTERBANK_REGEX = re.compile(
-    r'\b('
-    r'sweeps?|'                                  # Sweep, Sweeps, Sweep Account, Auto Sweep, Daily Sweep
-    r'transfers?(?:\s+(?:in|out|to|from|into))?|' # Transfers In/Out/To/From or Transfer, Transfers
-    r'trnsfrs?|'                                 # TRNSFR, TRNSFRS
-    r'xfers?|'                                   # XFER, XFERS
-    r'trans\b|'                                  # TRANS (standalone word)
-    r'internal\s+transfer|'                      # Internal Transfer
-    r'book\s+transfer|'                          # Book Transfer
-    r'inter-?account|'                           # Inter-account, Interaccount
-    r'online\s+transfer|'                        # Online Transfer
-    r'funds\s+transfer|'                         # Funds Transfer
-    r'account\s+transfer|'                       # Account Transfer
-    r'acct\s+transfer|'                          # Acct Transfer
-    r'self-?transfers?|'                         # Self Transfer
-    r'credit\s+card\s+payment'                   # Credit Card Payment
-    r')\b',
-    re.IGNORECASE
-)
+# STATEMENT_INTERBANK_REGEX = re.compile(
+#     r'\b('
+#     r'sweeps?|'                                  # Sweep, Sweeps, Sweep Account, Auto Sweep, Daily Sweep
+#     r'transfers?(?:\s+(?:in|out|to|from|into))?|' # Transfers In/Out/To/From or Transfer, Transfers
+#     r'trnsfrs?|'                                 # TRNSFR, TRNSFRS
+#     r'xfers?|'                                   # XFER, XFERS
+#     r'trans\b|'                                  # TRANS (standalone word)
+#     r'internal\s+transfer|'                      # Internal Transfer
+#     r'book\s+transfer|'                          # Book Transfer
+#     r'inter-?account|'                           # Inter-account, Interaccount
+#     r'online\s+transfer|'                        # Online Transfer
+#     r'funds\s+transfer|'                         # Funds Transfer
+#     r'account\s+transfer|'                       # Account Transfer
+#     r'acct\s+transfer|'                          # Acct Transfer
+#     r'self-?transfers?|'                         # Self Transfer
+#     r'credit\s+card\s+payment'                   # Credit Card Payment
+#     r')\b',
+#     re.IGNORECASE
+# )
 
 INTERBANK_EXCLUSION_REGEX = re.compile(
     r'\b(?:transfer|trans|xfer|trnsfr|wire|sweep|service)\s+fees?\b',
@@ -97,7 +97,7 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
         
         is_fee = bool(INTERBANK_EXCLUSION_REGEX.search(tx.description))
         has_recon_keywords = (not is_fee) and is_reconciliation and bool(re.search(r'\b(transfer|trans)\b', desc_lower))
-        has_stmt_keywords = (not is_fee) and (not is_reconciliation) and bool(STATEMENT_INTERBANK_REGEX.search(tx.description))
+        # has_stmt_keywords = (not is_fee) and (not is_reconciliation) and bool(STATEMENT_INTERBANK_REGEX.search(tx.description))
 
         for sib in sibling_accounts:
             sib_num = _clean(sib.account_number)
