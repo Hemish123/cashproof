@@ -98,6 +98,7 @@ def detect_interbank_transactions(project_id=None, batch_id=None):
         is_fee = bool(INTERBANK_EXCLUSION_REGEX.search(tx.description))
         has_recon_keywords = (not is_fee) and is_reconciliation and bool(re.search(r'\b(transfer|trans)\b', desc_lower))
         # has_stmt_keywords = (not is_fee) and (not is_reconciliation) and bool(STATEMENT_INTERBANK_REGEX.search(tx.description))
+        has_stmt_keywords = False
 
         for sib in sibling_accounts:
             sib_num = _clean(sib.account_number)
