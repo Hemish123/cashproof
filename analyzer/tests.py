@@ -364,3 +364,112 @@ class ProjectDetailModalButtonTests(TestCase):
         self.assertContains(response, 'id="add-reanalyze-btn">Add and Re-analyze</button>')
         self.assertContains(response, 'id="add-new-batch-btn">Analyze as New Batch</button>')
 
+
+class ExcelReportGenerationTests(TestCase):
+    def setUp(self):
+        import tempfile
+        self.user = User.objects.create_user(username='report_user', password='password123')
+        self.project = Project.objects.create(name='Report Project', user=self.user)
+        self.batch = AnalysisBatch.objects.create(project=self.project, name="Batch 1")
+        self.upload = StatementUpload.objects.create(
+            project=self.project,
+            batch=self.batch,
+            user=self.user,
+            file=SimpleUploadedFile("stmt.pdf", b"dummy content"),
+            status="COMPLETED"
+        )
+        self.acc = BankAccount.objects.create(
+            project=self.project,
+            batch=self.batch,
+            upload=self.upload,
+            bank_name="Test Bank",
+            account_number="1234567890",
+            beginning_balance=Decimal("1000.00"),
+            ending_balance=Decimal("1500.00"),
+            total_deposits=Decimal("800.00"),
+            total_payments=Decimal("300.00"),
+            start_date=datetime.date(2026, 1, 1),
+            end_date=datetime.date(2026, 1, 31)
+        )
+
+    def test_generate_excel_report_without_cleared_status(self):
+        import tempfile
+        import os
+        from analyzer.reports import generate_excel_report
+
+        Transaction.objects.create(
+            account=self.acc,
+            date=datetime.date(2026, 1, 15),
+            description="Sample deposit",
+            amount=Decimal("800.00"),
+        )
+        Transaction.objects.create(
+            account=self.acc,
+            date=datetime.date(2026, 1, 20),
+            description="Sample payment",
+            amount=Decimal("-300.00"),
+        )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp_path = tmp.name
+
+        try:
+            generate_excel_report([self.acc], tmp_path)
+            self.assertTrue(os.path.exists(tmp_path))
+            self.assertGreater(os.path.getsize(tmp_path), 0)
+
+            import openpyxl
+            wb = openpyxl.load_workbook(tmp_path)
+            ws_summary = wb["Executive Summary"]
+            summary_values = [cell.value for row in ws_summary.iter_rows() for cell in row if cell.value]
+            self.assertNotIn("Cleared Transactions Total", summary_values)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def test_generate_excel_report_with_cleared_status(self):
+        import tempfile
+        import os
+        from analyzer.reports import generate_excel_report
+
+        Transaction.objects.create(
+            account=self.acc,
+            date=datetime.date(2026, 1, 15),
+            description="Cleared deposit",
+            amount=Decimal("800.00"),
+            cleared_status="cleared"
+        )
+        Transaction.objects.create(
+            account=self.acc,
+            date=datetime.date(2026, 1, 20),
+            description="Uncleared payment",
+            amount=Decimal("-300.00"),
+            cleared_status="uncleared"
+        )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp_path = tmp.name
+
+        try:
+            generate_excel_report([self.acc], tmp_path)
+            self.assertTrue(os.path.exists(tmp_path))
+            self.assertGreater(os.path.getsize(tmp_path), 0)
+
+            import openpyxl
+            wb = openpyxl.load_workbook(tmp_path)
+            ws_summary = wb["Executive Summary"]
+            summary_values = [cell.value for row in ws_summary.iter_rows() for cell in row if cell.value]
+            self.assertIn("Cleared Transactions Total", summary_values)
+            self.assertIn("Cleared Balance", summary_values)
+            self.assertIn("Uncleared Transactions Total", summary_values)
+
+            # Check individual account sheet
+            acc_sheet = [s for s in wb.sheetnames if s not in ("Executive Summary", "Transaction Details")][0]
+            acc_values = [cell.value for row in wb[acc_sheet].iter_rows() for cell in row if cell.value]
+            self.assertIn("Cleared Transactions Total", acc_values)
+            self.assertIn("Cleared Balance", acc_values)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+

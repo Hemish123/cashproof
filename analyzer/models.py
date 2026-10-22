@@ -84,6 +84,7 @@ class Transaction(models.Model):
     is_interbank = models.BooleanField(default=False)
     interbank_confidence = models.CharField(max_length=20, null=True, blank=True)
     interbank_match_status = models.CharField(max_length=50, null=True, blank=True)
+    cleared_status = models.CharField(max_length=10, null=True, blank=True)   # 'cleared' | 'uncleared' | 'new' | None
 
     def __str__(self):
         tx_type = "Deposit" if self.amount >= 0 else "Payment"

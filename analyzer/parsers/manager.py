@@ -81,6 +81,7 @@ def process_statement(upload_id, project_id=None):
                             amount=tx_data['amount'],
                             balance=tx_data.get('balance'),
                             category=tx_data.get('category', 'Uncategorized'),
+                            cleared_status=tx_data.get('cleared_status'),
                             is_interbank=False
                         )
                     )

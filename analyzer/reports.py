@@ -11,6 +11,34 @@ def sanitize_str(val):
         return ILLEGAL_CHARACTERS_RE.sub('', val)
     return val
 
+def to_decimal(val):
+    if val is None:
+        return Decimal('0.00')
+    if isinstance(val, Decimal):
+        return val
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return Decimal('0.00')
+
+def cleared_breakdown(acc, txs):
+    """Returns None for normal statements (no cleared info), else a dict of
+    cleared / uncleared / new totals and the running balances."""
+    if not any(getattr(t, 'cleared_status', None) for t in txs):
+        return None
+    def tot(status):
+        return sum((to_decimal(t.amount) for t in txs if t.cleared_status == status), Decimal('0.00'))
+    cleared, uncleared, new = tot('cleared'), tot('uncleared'), tot('new')
+    beg = to_decimal(acc.beginning_balance)
+    return {
+        'cleared': cleared,
+        'uncleared': uncleared,
+        'new': new,
+        'cleared_balance': beg + cleared,                      # Beginning + cleared rows
+        'register_balance': beg + cleared + uncleared,         # + uncleared rows
+        'ending_balance': beg + cleared + uncleared + new,     # + new rows
+    }
+
 def format_period(start_date, end_date):
     if not start_date or not end_date:
         return "Unknown"
@@ -174,14 +202,14 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         ]
 
         # Add to combined totals
-        totals['deposits'] += acc.total_deposits
-        totals['payments'] += acc.total_payments
-        totals['ib_deposits'] += acc.total_interbank_deposits
-        totals['ib_payments'] += acc.total_interbank_payments
-        totals['net_deposits'] += acc.net_deposits
-        totals['net_payments'] += acc.net_payments
-        totals['beginning_balance'] += acc.beginning_balance
-        totals['ending_balance'] += acc.ending_balance
+        totals['deposits'] += to_decimal(acc.total_deposits)
+        totals['payments'] += to_decimal(acc.total_payments)
+        totals['ib_deposits'] += to_decimal(acc.total_interbank_deposits)
+        totals['ib_payments'] += to_decimal(acc.total_interbank_payments)
+        totals['net_deposits'] += to_decimal(acc.net_deposits)
+        totals['net_payments'] += to_decimal(acc.net_payments)
+        totals['beginning_balance'] += to_decimal(acc.beginning_balance)
+        totals['ending_balance'] += to_decimal(acc.ending_balance)
 
         for col_idx, val in enumerate(row_data, start=1):
             cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
@@ -232,12 +260,12 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
 
     for acc in bank_accounts:
         txs = list(acc.transactions.all().order_by('date', 'id'))
-        beginning_balance = acc.beginning_balance
-        ending_balance = acc.ending_balance
+        beginning_balance = to_decimal(acc.beginning_balance)
+        ending_balance = to_decimal(acc.ending_balance)
 
-        calculated_ending = beginning_balance + acc.total_deposits - acc.total_payments
+        calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
         diff = abs(calculated_ending - ending_balance)
-        recon_status = "PASS" if diff <= 0.05 else "FAIL"
+        recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
         
         period_str = format_period(acc.start_date, acc.end_date)
         
@@ -273,6 +301,22 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         cell_cred.number_format = num_format_currency
         cell_cred.alignment = align_right
         current_row += 1
+
+        cb = cleared_breakdown(acc, txs)
+        if cb:
+            for label, value in [
+                ("Cleared Transactions Total", cb['cleared']),
+                ("Cleared Balance", cb['cleared_balance']),
+                ("Uncleared Transactions Total", cb['uncleared']),
+                ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
+                ("New Transactions Total (after period end)", cb['new']),
+            ]:
+                ws_summary.cell(row=current_row, column=1, value=label).font = font_total
+                c = ws_summary.cell(row=current_row, column=2, value=value)
+                c.font = font_body
+                c.number_format = num_format_currency
+                c.alignment = align_right
+                current_row += 1
         
         recon_text = f"{recon_status} — Beginning + Credits - Debits = Ending"
         ws_summary.cell(row=current_row, column=1, value="Reconciliation Check").font = font_total
@@ -281,7 +325,6 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
         else:
             ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
-            
             
         current_row += 2 # gap
 
@@ -341,7 +384,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
 
     ledger_headers = [
         "Date", "Bank Name", "Account Number", "Account Title", "Statement Ref", "Description",
-        "Debit/Credit", "Amount", "Category", "Interbank Self-Transfer?"
+        "Debit/Credit", "Amount", "Category", "Interbank Self-Transfer?", "Cleared Status"
     ]
     
     for col_idx, header in enumerate(ledger_headers, start=1):
@@ -378,7 +421,8 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             debit_credit,
             tx.amount,
             tx.category,
-            "Yes" if tx.is_interbank else "No"
+            "Yes" if tx.is_interbank else "No",
+            (tx.cleared_status or "-").capitalize()
         ]
 
         for col_idx, val in enumerate(row_data, start=1):
@@ -386,7 +430,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell.font = font_body
             cell.border = border_all
 
-            if col_idx in (1, 10):
+            if col_idx in (1, 10, 11):
                 cell.alignment = align_center
             elif col_idx == 7:
                 cell.alignment = align_center
@@ -440,12 +484,12 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         ws_acc.views.sheetView[0].showGridLines = True
         
         txs = list(acc.transactions.all().order_by('date', 'id'))
-        beginning_balance = acc.beginning_balance
-        ending_balance = acc.ending_balance
+        beginning_balance = to_decimal(acc.beginning_balance)
+        ending_balance = to_decimal(acc.ending_balance)
 
-        calculated_ending = beginning_balance + acc.total_deposits - acc.total_payments
+        calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
         diff = abs(calculated_ending - ending_balance)
-        recon_status = "PASS" if diff <= 0.05 else "FAIL"
+        recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
         
         period_str = format_statement_dates(acc.start_date, acc.end_date)
         
@@ -463,6 +507,16 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             ("Calculated Ending Balance", calculated_ending),
             ("Reconciliation", recon_status)
         ]
+
+        cb = cleared_breakdown(acc, txs)
+        if cb:
+            card_data[-1:-1] = [
+                ("Cleared Transactions Total", cb['cleared']),
+                ("Cleared Balance", cb['cleared_balance']),
+                ("Uncleared Transactions Total", cb['uncleared']),
+                ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
+                ("New Transactions Total", cb['new']),
+            ]
         
         # Headers for Individual Sheet
         cell_h1 = ws_acc.cell(row=1, column=1, value="Bank Statement")

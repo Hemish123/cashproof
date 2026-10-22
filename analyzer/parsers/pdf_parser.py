@@ -902,6 +902,8 @@ class PDFStatementParser(BaseParser):
         """
         self.review_notes = []
         self._vision_page_ratio = 0.0
+        self.cleared_balance = None
+        self.register_balance = None
         try:
             return self._parse_via_openai()
         except Exception as ai_err:
@@ -1232,6 +1234,9 @@ class PDFStatementParser(BaseParser):
             "If that line shows two dollar amounts side by side, the account balance is the SECOND (right-"
             "hand) one — the first is just that period's net change.\n"
             "If a value cannot be found, use null — never guess.\n"
+            "For reconciliation reports also return 'cleared_balance' (the SECOND amount on the 'Cleared "
+            "Balance' line) and 'register_balance' (the SECOND amount on the 'Register Balance' line), or "
+            "null if absent.\n"
             "JSON Schema:\n"
             "{\n"
             "  \"bank_name\": \"Bank Name\",\n"
@@ -1241,6 +1246,8 @@ class PDFStatementParser(BaseParser):
             "  \"end_date\": \"YYYY-MM-DD or null\",\n"
             "  \"beginning_balance\": 1234.56,\n"
             "  \"ending_balance\": 5678.90,\n"
+            "  \"cleared_balance\": 1234.56,\n"
+            "  \"register_balance\": 1234.56,\n"
             "  \"accounts\": [\n"
             "    {\"account_number\": \"9625\", \"beginning_balance\": 1234.56, \"ending_balance\": 5678.90}\n"
             "  ]\n"
@@ -1309,6 +1316,8 @@ class PDFStatementParser(BaseParser):
             self.ending_balance = end
         elif self.ending_balance is None:
             self.ending_balance = Decimal("0.00")
+        self.cleared_balance = self._to_decimal(meta_res.get("cleared_balance"))
+        self.register_balance = self._to_decimal(meta_res.get("register_balance"))
 
         if not self.start_date:
             self.start_date = self._parse_iso_date(meta_res.get("start_date"))
@@ -1411,6 +1420,34 @@ class PDFStatementParser(BaseParser):
             "'CHECKS' table. For such a page return page_type 'check_images' and NO transactions.\n"
             "Preserve the order of rows exactly as printed. Copy the running 'balance' when the statement "
             "prints one, else null.\n"
+                        "RECONCILIATION-STYLE REPORTS (ledger reports comparing the books to a bank statement, e.g. "
+            "QuickBooks 'Reconciliation Detail'). Do NOT rely on exact heading words; they vary by software, "
+            "version and language. Set each row's 'cleared_status' from STRUCTURE:\n"
+            "  A. 'cleared': the Clr column has ANY mark (X, x, tick, C, R, *). The bank has processed it. "
+            "These rows normally sit in the FIRST top-level group of the report.\n"
+            "  B. 'uncleared': the Clr column is BLANK and the row is dated on or before the statement/period "
+            "end date. It is recorded in the books but the bank has not processed it yet (outstanding "
+            "checks, deposits in transit). These rows normally sit in a SECOND top-level group that follows "
+            "the cleared group.\n"
+            "  C. 'new': the Clr column is BLANK and the row is dated AFTER the statement/period end date. "
+            "These rows normally sit in a THIRD top-level group.\n"
+            "  D. Each top-level group has the same sub-sections (money-out rows and money-in rows). "
+            "Sub-sections inherit the status of the group they sit in. A group continues across pages until "
+            "a new top-level group begins; carry it forward when a page has no heading.\n"
+            "  E. If the Clr column and the group position disagree, trust the Clr column. For a blank Clr "
+            "column, use the row date versus the period end date to choose 'uncleared' or 'new'.\n"
+            "  F. Extract EVERY row of EVERY group. Never skip the uncleared or new groups just because they "
+            "are not cleared. Set 'clr_mark' to the exact character in the Clr column, or null if blank.\n"
+            "  G. If the page is an ordinary bank statement with no such groups and no Clr column, set "
+            "'cleared_status' and 'clr_mark' to null.\n"
+            "SIGN RULE: use the sign PRINTED on the amount. Never infer direction from the 'Type' column "
+            "(a row typed 'Deposit' can be a negative outflow). If no sign is printed, money-out sections "
+            "are negative and money-in sections are positive. A blank Name is allowed; use the Type text as "
+            "the description.\n"
+            "BALANCE COLUMN: it is a running total that restarts in each sub-section, so set 'balance' to "
+            "null for every row.\n"
+            "SKIP all summary lines: anything starting with 'Total', and the beginning / cleared / register / "
+            "ending balance lines, and item-count headings such as '... - 12 items'.\n"
             "JSON Schema:\n"
             "{\n"
             "  \"pages\": [\n"
@@ -1427,6 +1464,10 @@ class PDFStatementParser(BaseParser):
             "          \"account_number\": \"9625\",\n"
             "          \"section\": \"detail\",\n"
             "          \"check_number\": null\n"
+            "          \"section\": \"detail\",\n"
+            "          \"check_number\": null,\n"
+            "          \"cleared_status\": \"uncleared\",\n"
+            "          \"clr_mark\": null\n"
             "        }\n"
             "      ]\n"
             "    }\n"
@@ -1447,6 +1488,16 @@ class PDFStatementParser(BaseParser):
         except Exception:
             _dbg(f"Skipping row with unparseable amount/balance: {raw!r}")
             return None
+
+        raw_status = str(raw.get('cleared_status') or '').strip().lower()
+        cleared_status = raw_status if raw_status in ('cleared', 'uncleared', 'new') else None
+        clr_mark = str(raw.get('clr_mark') or '').strip()
+        if clr_mark:
+            cleared_status = 'cleared'
+        elif cleared_status == 'cleared':
+            cleared_status = 'uncleared'      # blank Clr column can't be cleared
+        if cleared_status == 'uncleared' and self.end_date and d_val > self.end_date:
+            cleared_status = 'new'            # dated after the period end
         return {
             'date': d_val,
             'description': desc,
@@ -1454,6 +1505,7 @@ class PDFStatementParser(BaseParser):
             'balance': bal,
             'category': self.derive_category(desc, raw.get("category"), amt),
             'account_number': raw.get('account_number') or self.account_number,
+            'cleared_status': cleared_status,
             # internal only — removed before results are returned
             '_section': str(raw.get('section') or '').strip().lower() or None,
             '_check_no': (str(raw.get('check_number')).strip().rstrip('*') if raw.get('check_number') else None),
