@@ -904,6 +904,9 @@ class PDFStatementParser(BaseParser):
         self._vision_page_ratio = 0.0
         self.cleared_balance = None
         self.register_balance = None
+        self._page_totals = []
+        self.recon_totals = None
+        
         try:
             return self._parse_via_openai()
         except Exception as ai_err:
@@ -951,7 +954,7 @@ class PDFStatementParser(BaseParser):
         model = model or getattr(
             settings,
             "OPENAI_MODEL",
-            "gpt-4.1-mini",
+            "gpt-4.1",
         )
 
         for attempt in range(max_retries):
@@ -1097,16 +1100,117 @@ class PDFStatementParser(BaseParser):
         return False
 
     @staticmethod
+    def _page_rotation_degrees(page):
+        """Clockwise degrees (0/90/180/270) needed to make the page text upright.
+        Works from the PDF's own character orientation, so it is not specific to one report."""
+        try:
+            chars = page.chars
+        except Exception:
+            return 0
+        if len(chars) < 20:
+            return 0
+        if sum(1 for c in chars if c.get('upright')) / len(chars) > 0.5:
+            return 0  # already upright
+        votes = {}
+        for c in chars[:500]:
+            m = c.get('matrix')
+            if not m:
+                continue
+            a, b = m[0], m[1]
+            if abs(b) > abs(a):
+                deg = 90 if b > 0 else 270   # text reads bottom-to-top / top-to-bottom
+            elif a < 0:
+                deg = 180
+            else:
+                continue
+            votes[deg] = votes.get(deg, 0) + 1
+        return max(votes, key=votes.get) if votes else 0
+
+
+    # @staticmethod
+    # def _render_b64(page, dpi):
+    #     """Render a page to a base64 JPEG. Deliberately raises on failure:
+    #     callers must decide what to do, never silently continue without
+    #     an image."""
+    #     with _PDFIUM_LOCK:
+    #         img = page.to_image(resolution=dpi).original.convert("L")
+    #     img.thumbnail((2000, 2000))
+    #     buf = io.BytesIO()
+    #     img.save(buf, format="JPEG", quality=80)
+    #     return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    @staticmethod
     def _render_b64(page, dpi):
-        """Render a page to a base64 JPEG. Deliberately raises on failure:
-        callers must decide what to do, never silently continue without
-        an image."""
+        """Render a page to a base64 JPEG, rotated upright. Raises on failure."""
         with _PDFIUM_LOCK:
             img = page.to_image(resolution=dpi).original.convert("L")
+        deg = PDFStatementParser._page_rotation_degrees(page)
+        if deg:
+            img = img.rotate(-deg, expand=True)   # PIL rotates counter-clockwise, so negate
         img.thumbnail((2000, 2000))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80)
         return base64.b64encode(buf.getvalue()).decode("utf-8")
+    
+    @staticmethod
+    def _split_into_strips(img, max_h=620, dark=110):
+        """Cut a page image into horizontal strips at blank gaps between rows."""
+        import numpy as np
+        a = np.array(img)
+        dk = a < dark                      # dark ink only (ignores light-grey watermark)
+        cols = np.where(dk.any(axis=0))[0]
+        if not len(cols):
+            return [img]
+        x0 = max(int(cols.min()) - 15, 0)
+        x1 = min(int(cols.max()) + 15, img.width)
+        rows_any = dk.any(axis=1)
+        ys = np.where(rows_any)[0]
+        top, bot = int(ys.min()), int(ys.max())
+
+        cuts, start = [], None
+        for y in range(top, bot + 1):
+            if not rows_any[y]:
+                if start is None:
+                    start = y
+            else:
+                if start is not None and y - start >= 3:
+                    cuts.append((start + y) // 2)
+                start = None
+
+        bounds, seg = [], max(top - 10, 0)
+        for i, c in enumerate(cuts):
+            nxt = cuts[i + 1] if i + 1 < len(cuts) else bot + 10
+            if nxt - seg > max_h and c - seg > 0:
+                bounds.append((seg, c))
+                seg = c
+        bounds.append((seg, min(bot + 10, img.height)))
+
+        out = []
+        for s, e in bounds:
+            if e - s <= 5:
+                continue
+            part = img.crop((x0, s, x1, e))
+            if part.width > 2048:          # keep within the model's native size
+                ratio = 2048 / part.width
+                part = part.resize((2048, max(int(part.height * ratio), 1)))
+            out.append(part)
+        return out or [img]
+
+    @staticmethod
+    def _render_strips_b64(page, dpi):
+        """Upright page -> list of base64 JPEG strips (top to bottom)."""
+        with _PDFIUM_LOCK:
+            img = page.to_image(resolution=dpi).original.convert("L")
+        deg = PDFStatementParser._page_rotation_degrees(page)
+        if deg:
+            img = img.rotate(-deg, expand=True)
+        result = []
+        for part in PDFStatementParser._split_into_strips(img):
+            buf = io.BytesIO()
+            part.save(buf, format="JPEG", quality=85)
+            result.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
+        return result
+    
 
     def _prepare_pages(self, pages):
         """Sequential (pdfplumber is not thread-safe): extract text and
@@ -1116,16 +1220,18 @@ class PDFStatementParser(BaseParser):
         for p_idx, page in enumerate(pages):
             text = page.extract_text() or ""
             use_vision = self._page_needs_vision(page, text)
-            b64 = None
+            b64, strips = None, None
             if use_vision:
                 try:
                     b64 = self._render_b64(page, dpi)
+                    strips = self._render_strips_b64(page, dpi)
                 except Exception as e:
                     _dbg(f"Vision render FAILED for page {p_idx + 1}: {e!r}")
                     if len(text.strip()) >= 50:
                         _dbg(f"Page {p_idx + 1}: falling back to (garbled) text mode")
                         use_vision = False
-            page_data.append({'p_idx': p_idx, 'p_text': text, 'use_vision': use_vision, 'b64_str': b64})
+            page_data.append({'p_idx': p_idx, 'p_text': text, 'use_vision': use_vision,
+                              'b64_str': b64, 'strips': strips})
             try:
                 page.flush_cache()
             except Exception:
@@ -1143,7 +1249,7 @@ class PDFStatementParser(BaseParser):
         vision_chunk_size = getattr(
             settings,
             "PDF_VISION_CHUNK_SIZE",
-            5,
+            1,
         )
 
         chunks = []
@@ -1284,11 +1390,18 @@ class PDFStatementParser(BaseParser):
         if not isinstance(meta_res, dict):
             meta_res = {}
 
+        # def _is_usable(value, placeholder, unknown_value):
+        #     if not value:
+        #         return False
+        #     v = str(value).strip().lower()
+        #     return v not in ('', placeholder.lower(), unknown_value.lower(), 'null', 'none', 'n/a')
+
         def _is_usable(value, placeholder, unknown_value):
             if not value:
                 return False
             v = str(value).strip().lower()
-            return v not in ('', placeholder.lower(), unknown_value.lower(), 'null', 'none', 'n/a')
+            return (v not in ('', placeholder.lower(), unknown_value.lower(), 'null', 'none', 'n/a')
+                    and not v.startswith('unknown'))
 
         ai_bank = meta_res.get("bank_name")
         if _is_usable(ai_bank, "Bank Name", "Unknown Bank"):
@@ -1324,13 +1437,13 @@ class PDFStatementParser(BaseParser):
         if not self.end_date:
             self.end_date = self._parse_iso_date(meta_res.get("end_date"))
 
-        # Fallback year detection if header metadata didn't provide dates
-        if not getattr(self, 'statement_year', None):
+        # Prefer the year of the statement dates; only search the text as a last resort
+        if self.end_date:
+            self.statement_year = self.end_date.year
+        elif self.start_date:
+            self.statement_year = self.start_date.year
+        elif not getattr(self, 'statement_year', None):
             self.statement_year = self._find_statement_year_from_text(header_text)
-            if not self.statement_year and self.end_date:
-                self.statement_year = self.end_date.year
-            elif not self.statement_year and self.start_date:
-                self.statement_year = self.start_date.year
 
         accounts = []
         for a in (meta_res.get("accounts") or []):
@@ -1390,6 +1503,10 @@ class PDFStatementParser(BaseParser):
             "Dates often omit the year (e.g. '1/05'). Infer the year from the statement date/period printed "
             "on the page or given above, and ALWAYS output full YYYY-MM-DD dates.\n"
             "If multiple pages are included, each is marked '=== PAGE N ==='. Return exactly ONE entry in "
+            "A scanned page may arrive as several consecutive horizontal strips ('part k of m', top to "
+            "bottom) of the SAME page. Read them in order as one continuous table and return ONE entry in "
+            "'pages' for that page containing every row of every part. Never repeat a row. Copy names, "
+            "check numbers and amounts exactly as printed; never correct, guess or invent rows.\n"
             "'pages' for EVERY page shown, with its page number.\n"
             "'page_type' must be one of: transactions | summary | check_images | blank | other | unreadable.\n"
             "  - 'transactions': the page contains ANY transaction rows (then list them all).\n"
@@ -1420,7 +1537,7 @@ class PDFStatementParser(BaseParser):
             "'CHECKS' table. For such a page return page_type 'check_images' and NO transactions.\n"
             "Preserve the order of rows exactly as printed. Copy the running 'balance' when the statement "
             "prints one, else null.\n"
-                        "RECONCILIATION-STYLE REPORTS (ledger reports comparing the books to a bank statement, e.g. "
+            "RECONCILIATION-STYLE REPORTS (ledger reports comparing the books to a bank statement, e.g. "
             "QuickBooks 'Reconciliation Detail'). Do NOT rely on exact heading words; they vary by software, "
             "version and language. Set each row's 'cleared_status' from STRUCTURE:\n"
             "  A. 'cleared': the Clr column has ANY mark (X, x, tick, C, R, *). The bank has processed it. "
@@ -1444,10 +1561,20 @@ class PDFStatementParser(BaseParser):
             "(a row typed 'Deposit' can be a negative outflow). If no sign is printed, money-out sections "
             "are negative and money-in sections are positive. A blank Name is allowed; use the Type text as "
             "the description.\n"
-            "BALANCE COLUMN: it is a running total that restarts in each sub-section, so set 'balance' to "
-            "null for every row.\n"
-            "SKIP all summary lines: anything starting with 'Total', and the beginning / cleared / register / "
-            "ending balance lines, and item-count headings such as '... - 12 items'.\n"
+            "A page can start with rows that CONTINUE the previous page's list, above the first 'Total ...' "
+            "line or heading. Extract those rows too; they are real transactions.\n"
+            "BALANCE COLUMN: copy the Balance column EXACTLY as printed for EVERY row (it is a running "
+            "total that restarts at the top of each sub-section). Never leave it null when a balance is "
+            "printed. 'amount' is the Amount column, which sits to the LEFT of Balance; never put a "
+            "Balance value in 'amount'.\n"
+            "SUMMARY LINES (lines starting with 'Total', the beginning / cleared / register / ending balance "
+            "lines, and item-count headings such as '... - 12 items') must NOT go into 'transactions'. "
+            "Instead list each one, in printed order, in that page's 'printed_totals' with: 'label' (exact "
+            "text), 'kind' = payments_total (subtotal of the money-out list) | deposits_total (subtotal of "
+            "the money-in list) | group_total (net total of a whole top-level group, e.g. 'Total Cleared "
+            "Transactions') | beginning_balance | cleared_balance | register_balance | ending_balance | "
+            "other, 'amount' = the number in the Amount column, 'balance' = the number in the Balance "
+            "column (null if only one number is printed on the line). Never invent a total.\n"
             "JSON Schema:\n"
             "{\n"
             "  \"pages\": [\n"
@@ -1463,13 +1590,12 @@ class PDFStatementParser(BaseParser):
             "          \"category\": \"Category name or null\",\n"
             "          \"account_number\": \"9625\",\n"
             "          \"section\": \"detail\",\n"
-            "          \"check_number\": null\n"
-            "          \"section\": \"detail\",\n"
             "          \"check_number\": null,\n"
             "          \"cleared_status\": \"uncleared\",\n"
             "          \"clr_mark\": null\n"
             "        }\n"
             "      ]\n"
+            "      ,\"printed_totals\": [{\"label\": \"Total Checks and Payments\", \"kind\": \"payments_total\", \"amount\": -5197975.22, \"balance\": -5197975.22}]\n"
             "    }\n"
             "  ]\n"
             "}"
@@ -1492,6 +1618,8 @@ class PDFStatementParser(BaseParser):
         raw_status = str(raw.get('cleared_status') or '').strip().lower()
         cleared_status = raw_status if raw_status in ('cleared', 'uncleared', 'new') else None
         clr_mark = str(raw.get('clr_mark') or '').strip()
+        if clr_mark.lower() in ('null', 'none', 'n/a', '-', ''):
+            clr_mark = ''
         if clr_mark:
             cleared_status = 'cleared'
         elif cleared_status == 'cleared':
@@ -1526,6 +1654,9 @@ class PDFStatementParser(BaseParser):
             ptype = str(entry.get('page_type') or '').strip().lower() or None
             if n is not None:
                 page_types[n] = ptype
+            for k, pt in enumerate(entry.get('printed_totals') or []):
+                if isinstance(pt, dict) and n is not None:
+                    self._page_totals.append((n, k, pt))
             if ptype == 'check_images':
                 _dbg(f"Page {n}: check-image page, ignoring its rows")
                 continue
@@ -1561,7 +1692,7 @@ class PDFStatementParser(BaseParser):
         client,
         chunk,
         model=None,
-        image_detail="low",
+        image_detail="high",
     ):
         page_nums = [
             d["p_idx"] + 1
@@ -1604,38 +1735,23 @@ class PDFStatementParser(BaseParser):
             ]
 
             for d in chunk:
-
-                user_msg.append({
-                    "type": "text",
-                    "text": (
-                        f"===== PAGE "
-                        f"{d['p_idx'] + 1} ====="
-                    ),
-                })
-
-                user_msg.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": (
-                            "data:image/jpeg;base64,"
-                            f"{d['b64_str']}"
-                        ),
-                        "detail": image_detail,
-                    },
-                })
-
+                n = d['p_idx'] + 1
+                strips = d.get('strips')
+                if strips:
+                    for k, s in enumerate(strips, 1):
+                        user_msg.append({"type": "text",
+                                         "text": f"===== PAGE {n} - part {k} of {len(strips)} (top to bottom) ====="})
+                        user_msg.append({"type": "image_url",
+                                         "image_url": {"url": f"data:image/jpeg;base64,{s}",
+                                                       "detail": image_detail}})
+                else:
+                    user_msg.append({"type": "text", "text": f"===== PAGE {n} ====="})
+                    user_msg.append({"type": "image_url",
+                                     "image_url": {"url": f"data:image/jpeg;base64,{d['b64_str']}",
+                                                   "detail": image_detail}})
         else:
-
-            combined = "\n\n".join(
-                f"=== PAGE {d['p_idx'] + 1} ===\n"
-                f"{d['p_text']}"
-                for d in chunk
-            )
-
-            user_msg = (
-                f"{instruction}\n\n"
-                f"{combined}"
-            )
+            combined = "\n\n".join(f"=== PAGE {d['p_idx'] + 1} ===\n{d['p_text']}" for d in chunk)
+            user_msg = f"{instruction}\n\n{combined}"
 
         try:
 
@@ -1784,6 +1900,21 @@ class PDFStatementParser(BaseParser):
             return re.sub(r'\D', '', tx['_check_no']) or None
         m = _CHECK_NUM_RE.match(tx.get('description') or '')
         return m.group(1) if m else None
+    
+    def _finalize_cleared_status(self, transactions):
+        """Reconciliation reports only: a row with a Clr mark is 'cleared'. A blank-Clr row is
+        'uncleared' if dated on/before the period end, else 'new'. No model guesswork."""
+        if not any(t.get('cleared_status') == 'cleared' for t in transactions):
+            return  # normal bank statement
+        for t in transactions:
+            if t.get('cleared_status') == 'cleared':
+                continue
+            if self.end_date and t['date'] > self.end_date:
+                t['cleared_status'] = 'new'
+            else:
+                t['cleared_status'] = 'uncleared'
+
+    
 
     def _dedupe_checks(self, transactions):
         """Many statements list every check twice: once in the main ledger and
@@ -1814,6 +1945,198 @@ class PDFStatementParser(BaseParser):
         if dropped:
             _dbg(f"Dropped {dropped} duplicate check row(s) (same check listed in ledger and check table)")
         return out
+
+    def _flag_running_balance_breaks(self, transactions):
+        """Detection only. Never changes a value."""
+        if not any(t.get('cleared_status') for t in transactions):
+            return
+        keys = self._reconciliation_group_keys(transactions)
+        run, prev, breaks = Decimal("0.00"), None, []
+        for i, t in enumerate(transactions):
+            if keys[i] != prev:
+                run, prev = Decimal("0.00"), keys[i]
+            bal = t.get('balance')
+            if bal is None:
+                run += t['amount']
+                continue
+            if abs(run + t['amount'] - bal) > Decimal("0.01"):
+                breaks.append(f"{t['date']} '{(t['description'] or '')[:35]}' amount {t['amount']} / balance {bal}")
+            run = bal
+        if breaks:
+            self.review_notes.append(
+                f"{len(breaks)} reconciliation row(s) do not tie to the printed running balance "
+                f"(review these in the Excel): " + "; ".join(breaks[:15]) + (" ..." if len(breaks) > 15 else ""))
+
+    @staticmethod
+    def _reconciliation_group_keys(transactions):
+        """Key = (cleared_status, money_out). Zero-amount rows take the group of the next
+        non-zero row, so a zero row at the top of a deposits list stays with the deposits."""
+        n = len(transactions)
+        key = [None] * n
+        nxt = None
+        for i in range(n - 1, -1, -1):
+            t = transactions[i]
+            if t['amount'] != 0:
+                nxt = (t.get('cleared_status'), t['amount'] < 0)
+                key[i] = nxt
+            else:
+                key[i] = nxt if (nxt and nxt[0] == t.get('cleared_status')) else None
+        prev = None
+        for i in range(n):
+            if key[i] is None:
+                key[i] = prev if (prev and prev[0] == transactions[i].get('cleared_status')) \
+                    else (transactions[i].get('cleared_status'), False)
+            prev = key[i]
+        return key
+
+    def _repair_reconciliation_run(self, rows):
+        """One sub-section in printed order. Balance = running total of amounts (starts at 0).
+        Finds the fewest corrections (amount OR balance per mismatching row) that make the
+        section consistent, so a misread digit cannot cascade."""
+        tol = Decimal("0.01")
+        cent = Decimal("0.01")
+        layers, cur = [], {Decimal("0.00"): (0, None, None)}
+        for t in rows:
+            a, b = t['amount'], t.get('balance')
+            nxt = {}
+            for tb, (cost, _bp, _k) in cur.items():
+                if b is None:
+                    cand = [(tb + a, cost, 'keep')]
+                elif abs(tb + a - b) <= tol:
+                    cand = [(b, cost, 'keep')]
+                else:
+                    cand = [(b, cost + 1, 'amount'), (tb + a, cost + 1, 'balance')]
+                for new_tb, c, kind in cand:
+                    new_tb = new_tb.quantize(cent)
+                    old = nxt.get(new_tb)
+                    if old is None or c < old[0]:
+                        nxt[new_tb] = (c, tb, kind)
+            best = min(v[0] for v in nxt.values())
+            cur = {k: v for k, v in nxt.items() if v[0] <= best + 2}
+            layers.append(cur)
+        if not layers:
+            return
+        last_bal = rows[-1].get('balance')
+        end_tb = min(cur, key=lambda x: (cur[x][0],
+                     0 if (last_bal is not None and abs(x - last_bal) <= tol) else 1))
+        tb = end_tb
+        for idx in range(len(rows) - 1, -1, -1):
+            _cost, prev_tb, kind = layers[idx][tb]
+            t = rows[idx]
+            label = f"{t['date']} '{(t['description'] or '')[:40]}'"
+            if kind == 'amount':
+                new_amt = tb - prev_tb
+                self.review_notes.append(
+                    f"Auto-corrected amount {t['amount']} -> {new_amt} for {label} (from running balance)")
+                t['amount'] = new_amt
+                t['category'] = self.derive_category(t['description'], t.get('category'), new_amt)
+            elif kind == 'balance':
+                self.review_notes.append(
+                    f"Auto-corrected balance {t.get('balance')} -> {tb} for {label}")
+                t['balance'] = tb
+            tb = prev_tb
+
+    def _repair_reconciliation_rows(self, transactions):
+        """Reconciliation reports only (rows carry a cleared status)."""
+        if not any(t.get('cleared_status') for t in transactions):
+            return
+        keys = self._reconciliation_group_keys(transactions)
+        i, n = 0, len(transactions)
+        while i < n:
+            j = i
+            while j < n and keys[j] == keys[i]:
+                j += 1
+            self._repair_reconciliation_run(transactions[i:j])
+            i = j
+
+    def _check_reconciliation_totals(self, transactions):
+        """Compares each group's net with the printed Cleared / Register / Ending balances
+        and writes the exact gap to review_notes, so a missed row is easy to locate."""
+        if not any(t.get('cleared_status') for t in transactions):
+            return
+        if None in (self.beginning_balance, self.cleared_balance, self.register_balance, self.ending_balance):
+            return
+        def net(status):
+            return sum((t['amount'] for t in transactions if t.get('cleared_status') == status),
+                       Decimal("0.00"))
+        expected = {
+            'cleared': self.cleared_balance - self.beginning_balance,
+            'uncleared': self.register_balance - self.cleared_balance,
+            'new': self.ending_balance - self.register_balance,
+        }
+        for status, exp in expected.items():
+            gap = exp - net(status)
+            if abs(gap) > Decimal("0.01"):
+                self.review_notes.append(
+                    f"Reconciliation: '{status}' rows net {net(status)} but the printed balances imply "
+                    f"{exp} (missing/misread {gap}). Check the first/last rows of that group.")
+        
+
+    def _build_recon_totals(self):
+        """Printed subtotals in document order -> per-group totals + balance lines.
+        A 'group_total' line closes a group (1st = cleared, 2nd = uncleared, 3rd = new)."""
+        seen, ordered = set(), []
+        for page, seq, e in sorted(self._page_totals, key=lambda x: (x[0], x[1])):
+            key = (page, str(e.get('label')).strip().lower(), str(e.get('amount')), str(e.get('balance')))
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(e)
+
+        names = ['cleared', 'uncleared', 'new']
+        totals, raw, gi = {g: {} for g in names}, {}, 0
+        for e in ordered:
+            kind = str(e.get('kind') or '').strip().lower()
+            amt, bal = self._to_decimal(e.get('amount')), self._to_decimal(e.get('balance'))
+            g = names[min(gi, 2)]
+            if kind == 'payments_total' and amt is not None:
+                totals[g]['payments'] = abs(amt)
+            elif kind == 'deposits_total' and amt is not None:
+                totals[g]['deposits'] = abs(amt)
+            elif kind == 'group_total':
+                v = amt if amt is not None else bal
+                if v is not None:
+                    totals[g]['net'] = v
+                gi += 1
+            elif kind in ('beginning_balance', 'cleared_balance', 'register_balance', 'ending_balance'):
+                raw[kind] = (amt, bal)
+
+        def net_of(g):
+            d = totals[g]
+            if 'net' in d:
+                return d['net']
+            if 'deposits' in d or 'payments' in d:
+                return d.get('deposits', Decimal("0.00")) - d.get('payments', Decimal("0.00"))
+            return None
+
+        meta = {'beginning_balance': self.beginning_balance, 'cleared_balance': self.cleared_balance,
+                'register_balance': self.register_balance, 'ending_balance': self.ending_balance}
+
+        def pick(kind, expected):
+            """Balance column preferred; when a line prints two numbers choose the one that
+            fits the arithmetic; never use an Amount-column number that does not fit."""
+            amt, bal = raw.get(kind, (None, None))
+            cands = [c for c in (bal, meta.get(kind), amt) if c is not None]
+            if not cands:
+                return None
+            if expected is not None:
+                for c in cands:
+                    if abs(c - expected) <= Decimal("0.05"):
+                        return c
+            pref = [c for c in (bal, meta.get(kind)) if c is not None]
+            return pref[0] if pref else cands[0]
+
+        def plus(a, b):
+            return a + b if (a is not None and b is not None) else None
+
+        beg = pick('beginning_balance', None)
+        cleared = pick('cleared_balance', plus(beg, net_of('cleared')))
+        register = pick('register_balance', plus(cleared, net_of('uncleared')))
+        ending = pick('ending_balance', plus(register, net_of('new')))
+        balances = {k: v for k, v in {'beginning_balance': beg, 'cleared_balance': cleared,
+                                      'register_balance': register, 'ending_balance': ending}.items()
+                    if v is not None}
+        return totals, balances
 
     
     def _repair_from_running_balances(self, transactions):
@@ -2051,7 +2374,7 @@ class PDFStatementParser(BaseParser):
                 normal_model = getattr(
                     settings,
                     "OPENAI_MODEL",
-                    "gpt-4.1-mini",
+                    "gpt-4.1",
                 )
 
                 futures = {
@@ -2060,7 +2383,7 @@ class PDFStatementParser(BaseParser):
                         client,
                         c,
                         normal_model,
-                        "low",
+                        "high",
                     ): c
                     for c in chunks
                 }
@@ -2085,8 +2408,14 @@ class PDFStatementParser(BaseParser):
                     try:
                         b64 = self._render_b64(pages[n - 1], retry_dpi)
                         retry_chunk = [{'p_idx': n - 1, 'p_text': page_data[n - 1]['p_text'],
-                                        'use_vision': True, 'b64_str': b64}]
-                        res = self._extract_chunk(client, retry_chunk)
+                                        'use_vision': True, 'b64_str': b64,
+                                        'strips': self._render_strips_b64(pages[n - 1], retry_dpi)}]
+                        res = self._extract_chunk(
+                            client,
+                            retry_chunk,
+                            model=normal_model,
+                            image_detail="high",
+                        )
                     except Exception as e:
                         _dbg(f"Retry of page {n} failed: {e!r}")
                         unresolved.append(n)
@@ -2104,8 +2433,23 @@ class PDFStatementParser(BaseParser):
                 f"Pages {sorted(unresolved)} looked like transaction pages but no transactions could be "
                 f"extracted — statement may be incomplete."
             )
-
-        transactions = self._dedupe_checks(transactions)
+        self._finalize_cleared_status(transactions)
+        if any(t.get('cleared_status') for t in transactions):      # reconciliation report
+            totals, balances = self._build_recon_totals()
+            self.recon_totals = {g: {k: str(v) for k, v in d.items()} for g, d in totals.items() if d} or None
+            if balances.get('beginning_balance') is not None:
+                self.beginning_balance = balances['beginning_balance']
+            if balances.get('cleared_balance') is not None:
+                self.cleared_balance = balances['cleared_balance']
+            if balances.get('register_balance') is not None:
+                self.register_balance = balances['register_balance']
+            if balances.get('ending_balance') is not None:
+                self.ending_balance = balances['ending_balance']
+        self._flag_running_balance_breaks(transactions)
+        self._check_reconciliation_totals(transactions)
+        if not any(t.get('cleared_status') for t in transactions):
+            transactions = self._dedupe_checks(transactions)
+    
 
         # print(f"\n🔍 Total transactions after dedupe: {len(transactions)}")
 
@@ -2133,7 +2477,7 @@ class PDFStatementParser(BaseParser):
             balances_agree = (beg is not None and end is not None and abs(beg - end) <= Decimal("0.01"))
             if metadata_ok and not bank_known:
                 self.review_notes.append("Bank name could not be detected for this statement.")
-            if unresolved or not metadata_ok or not balances_agree:
+            if not metadata_ok or not balances_agree or (unresolved and not balances_agree):
                 raise StatementParseError(
                     "AI extraction produced 0 transactions and the statement does not look dormant "
                     f"(bank={self.bank_name!r}, account={self.account_number!r}, "
@@ -2144,9 +2488,14 @@ class PDFStatementParser(BaseParser):
 
         # Repair misread amounts from the printed running balance, then verify
         # (original statement order, before date-sorting).
+        # if transactions:
+        #     # self._repair_from_running_balances(transactions)
+        #     self._check_running_balances(transactions)
+        #     self._harmonize_transaction_years(transactions)
+
         if transactions:
-            # self._repair_from_running_balances(transactions)
-            self._check_running_balances(transactions)
+            if not any(t.get('cleared_status') for t in transactions):
+                self._check_running_balances(transactions)
             self._harmonize_transaction_years(transactions)
 
         transactions.sort(key=lambda x: x['date'])  # stable: keeps in-day order
@@ -2231,6 +2580,9 @@ class PDFStatementParser(BaseParser):
                 'end_date': end_date,
                 'beginning_balance': beginning_balance,
                 'ending_balance': ending_balance,
+                'cleared_balance': self.cleared_balance if is_primary else None,
+                'register_balance': self.register_balance if is_primary else None,
+                'recon_totals': self.recon_totals if is_primary else None,
             }, group_txs))
         return results
 
@@ -2317,6 +2669,7 @@ class PDFStatementParser(BaseParser):
             'end_date': self.end_date,
             'beginning_balance': self.beginning_balance or Decimal('0.00'),
             'ending_balance': self.ending_balance or Decimal('0.00'),
+            
         }
         # manager.py expects a list of (account_meta, transactions) pairs.
         return [(account_meta, sorted_txs)]

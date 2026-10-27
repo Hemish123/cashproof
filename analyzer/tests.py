@@ -459,15 +459,22 @@ class ExcelReportGenerationTests(TestCase):
             wb = openpyxl.load_workbook(tmp_path)
             ws_summary = wb["Executive Summary"]
             summary_values = [cell.value for row in ws_summary.iter_rows() for cell in row if cell.value]
-            self.assertIn("Cleared Transactions Total", summary_values)
-            self.assertIn("Cleared Balance", summary_values)
-            self.assertIn("Uncleared Transactions Total", summary_values)
+            self.assertIn("Total Cleared Transactions", summary_values)
+            self.assertIn("Total Uncleared Transactions", summary_values)
+            self.assertNotIn("Cleared extracted rows vs printed totals", summary_values)
+            self.assertNotIn("Extraction Check (transaction rows)", summary_values)
 
             # Check individual account sheet
             acc_sheet = [s for s in wb.sheetnames if s not in ("Executive Summary", "Transaction Details")][0]
             acc_values = [cell.value for row in wb[acc_sheet].iter_rows() for cell in row if cell.value]
-            self.assertIn("Cleared Transactions Total", acc_values)
-            self.assertIn("Cleared Balance", acc_values)
+            self.assertIn("Cleared Deposits and Credits", acc_values)
+            self.assertIn("Uncleared Checks and Payments", acc_values)
+            self.assertNotIn("Step 1 calculated", acc_values)
+            self.assertNotIn("Step 1 printed", acc_values)
+            self.assertNotIn("Step 2 calculated", acc_values)
+            self.assertNotIn("Step 2 printed", acc_values)
+            self.assertNotIn("Step 3 calculated", acc_values)
+            self.assertNotIn("Step 3 printed", acc_values)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

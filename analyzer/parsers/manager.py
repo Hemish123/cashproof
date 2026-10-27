@@ -19,6 +19,7 @@ def process_statement(upload_id, project_id=None):
     try:
         if ext == '.pdf':
             parser = PDFStatementParser(file_path)
+            parser.is_reconciliation = (upload.source_type == 'RECONCILIATION')
         elif ext in ('.csv', '.xlsx', '.xls'):
             parser = CSVExcelParser(file_path)
         else:
@@ -61,7 +62,10 @@ def process_statement(upload_id, project_id=None):
                     start_date=start_d,
                     end_date=end_d,
                     beginning_balance=account_meta.get('beginning_balance', 0.00),
-                    ending_balance=account_meta.get('ending_balance', 0.00)
+                    ending_balance=account_meta.get('ending_balance', 0.00),
+                    cleared_balance=account_meta.get('cleared_balance'),
+                    register_balance=account_meta.get('register_balance'),
+                    recon_totals=account_meta.get('recon_totals'),
                 )
 
                 # Create Transactions

@@ -62,6 +62,9 @@ class BankAccount(models.Model):
     end_date = models.DateField(null=True, blank=True)
     beginning_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
     ending_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    cleared_balance = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    register_balance = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    recon_totals = models.JSONField(null=True, blank=True)
 
     # Core Summary Aggregations
     total_deposits = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)

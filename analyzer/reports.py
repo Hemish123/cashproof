@@ -1,3 +1,598 @@
+# import openpyxl
+# from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+# from openpyxl.utils import get_column_letter
+# from decimal import Decimal
+# import re
+# from datetime import datetime
+# from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+
+# def sanitize_str(val):
+#     if isinstance(val, str):
+#         return ILLEGAL_CHARACTERS_RE.sub('', val)
+#     return val
+
+# def to_decimal(val):
+#     if val is None:
+#         return Decimal('0.00')
+#     if isinstance(val, Decimal):
+#         return val
+#     try:
+#         return Decimal(str(val))
+#     except Exception:
+#         return Decimal('0.00')
+
+# def cleared_breakdown(acc, txs):
+#     """Returns None for normal statements (no cleared info), else a dict of
+#     cleared / uncleared / new totals and the running balances."""
+#     if not any(getattr(t, 'cleared_status', None) for t in txs):
+#         return None
+#     def tot(status):
+#         return sum((to_decimal(t.amount) for t in txs if t.cleared_status == status), Decimal('0.00'))
+#     cleared, uncleared, new = tot('cleared'), tot('uncleared'), tot('new')
+#     beg = to_decimal(acc.beginning_balance)
+#     return {
+#         'cleared': cleared,
+#         'uncleared': uncleared,
+#         'new': new,
+#         'cleared_balance': beg + cleared,                      # Beginning + cleared rows
+#         'register_balance': beg + cleared + uncleared,         # + uncleared rows
+#         'ending_balance': beg + cleared + uncleared + new,     # + new rows
+#     }
+
+# def format_period(start_date, end_date):
+#     if not start_date or not end_date:
+#         return "Unknown"
+#     start_str = start_date.strftime("%b %d")
+#     if start_date.year == end_date.year:
+#         if start_date.month == end_date.month:
+#             return f"{start_str} - {end_date.strftime('%b %d')}, {start_date.year}"
+#         else:
+#             return f"{start_str} - {end_date.strftime('%b %d')}, {start_date.year}"
+#     else:
+#         return f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
+
+# def format_statement_dates(start_date, end_date):
+#     if not start_date or not end_date:
+#         return "Statement Dates Unknown"
+#     return f"Statement Dates {start_date.strftime('%m/%d/%y')} thru {end_date.strftime('%m/%d/%y')}"
+
+# def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
+#     """
+#     Generates a standardized Excel report matching QNB_KwikGoal format:
+#     1. Executive Summary
+#     2. Transaction Ledger
+#     3. Individual Account Tabs
+#     """
+#     wb = openpyxl.Workbook()
+#     # Remove default sheet
+#     default_sheet = wb.active
+#     wb.remove(default_sheet)
+
+#     # 1. Create Executive Summary Sheet
+#     ws_summary = wb.create_sheet(title="Executive Summary")
+#     ws_summary.views.sheetView[0].showGridLines = True
+
+#     # 2. Create Transaction Details Sheet
+#     ws_ledger = wb.create_sheet(title="Transaction Details")
+#     ws_ledger.views.sheetView[0].showGridLines = True
+
+#     # ---- Style definitions ----
+#     font_title = Font(name="Segoe UI", size=16, bold=True, color="1F4E79")
+#     font_subtitle = Font(name="Segoe UI", size=10, italic=True, color="595959")
+#     font_header = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+#     font_body = Font(name="Segoe UI", size=11)
+#     font_total = Font(name="Segoe UI", size=11, bold=True)
+#     font_dimmed = Font(name="Segoe UI", size=10, italic=True, color="7F7F7F")
+
+#     fill_header_summary = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+#     fill_header_ledger = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
+#     fill_zebra = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+#     fill_total = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+#     fill_interbank = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid") # light yellow
+
+#     thin_border_side = Side(style='thin', color='D9D9D9')
+#     border_all = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    
+#     double_bottom = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
+
+#     align_center = Alignment(horizontal="center", vertical="center")
+#     align_left = Alignment(horizontal="left", vertical="center")
+#     align_right = Alignment(horizontal="right", vertical="center")
+
+#     num_format_currency = '#,##0.00;(#,##0.00);"-";@'
+#     num_format_signed_currency = '+$#,##0.00;-$#,##0.00;"$0.00";@'
+
+#     font_credit = Font(name="Segoe UI", size=11, color="1E6E52")
+#     font_debit = Font(name="Segoe UI", size=11, color="C00000")
+#     font_credit_bold = Font(name="Segoe UI", size=11, bold=True, color="1E6E52")
+#     font_debit_bold = Font(name="Segoe UI", size=11, bold=True, color="C00000")
+
+#     company_name = "Kwik Goal LTD"
+#     if bank_accounts and bank_accounts[0].account_holder:
+#         company_name = bank_accounts[0].account_holder
+
+#     primary_bank = bank_accounts[0].bank_name if bank_accounts else "Unknown Bank"
+
+#     # ==================== BUILD EXECUTIVE SUMMARY ====================
+#     ws_summary["A1"] = sanitize_str("Bank Statement Cash Flow Analysis Report")
+#     ws_summary["A1"].font = font_title
+#     ws_summary["A2"] = sanitize_str(f"Executive Aggregates & Standardization Summary — {company_name} ({primary_bank})")
+#     ws_summary["A2"].font = font_subtitle
+
+#     # Table Headers starting at row 4
+#     summary_headers = [
+#         "Account", "Time Period", "Bank Name", "Account Number", 
+#         "Manually Entered Account Name", "Manually Entered Account Number", "Mapped",
+#         "Beginning Balance", "Total Deposits", "Total Payments", "Ending Balance",
+#         "Total Interbank Deposits", "Total Interbank Payments",
+#         "Net Deposits", "Net Payments"
+#     ]
+    
+#     for col_idx, header in enumerate(summary_headers, start=1):
+#         cell = ws_summary.cell(row=4, column=col_idx, value=header)
+#         cell.font = font_header
+#         cell.fill = fill_header_summary
+#         cell.alignment = align_center
+#         cell.border = border_all
+#     ws_summary.row_dimensions[4].height = 28
+
+#     current_row = 5
+#     totals = {
+#         'deposits': Decimal('0.00'), 'payments': Decimal('0.00'),
+#         'ib_deposits': Decimal('0.00'), 'ib_payments': Decimal('0.00'),
+#         'net_deposits': Decimal('0.00'), 'net_payments': Decimal('0.00'),
+#         'beginning_balance': Decimal('0.00'), 'ending_balance': Decimal('0.00')
+#     }
+
+#     if manual_accounts is None:
+#         manual_accounts = []
+
+#     # Map statement accounts to manual accounts
+#     mapped_manual_accounts = set()
+#     for acc in bank_accounts:
+#         acc.mapped_manual = None
+#         stmt_num = re.sub(r'\D', '', acc.account_number or '')
+#         stmt_num_last4 = stmt_num[-4:] if len(stmt_num) >= 4 else stmt_num
+#         for manual in manual_accounts:
+#             man_num = re.sub(r'\D', '', manual.account_number or '')
+#             man_num_last4 = man_num[-4:] if len(man_num) >= 4 else man_num
+#             if stmt_num_last4 and man_num_last4 and stmt_num_last4 == man_num_last4:
+#                 acc.mapped_manual = manual
+#                 mapped_manual_accounts.add(manual)
+#                 break
+
+#     unmapped_manuals = [m for m in manual_accounts if m not in mapped_manual_accounts]
+#     all_summary_accounts = list(bank_accounts) + unmapped_manuals
+
+#     # Populating summary rows
+#     for idx, acc in enumerate(all_summary_accounts):
+#         period_str = format_period(acc.start_date, acc.end_date)
+        
+#         manual_name = "-"
+#         manual_number = "-"
+#         mapped_status = "No"
+
+#         if getattr(acc, 'is_manual', False):
+#             # This is an unmapped manual account showing up on its own row
+#             manual_name = acc.bank_name
+#             manual_number = acc.account_number
+#             mapped_status = "No"
+#         else:
+#             if getattr(acc, 'mapped_manual', None):
+#                 manual_name = acc.mapped_manual.bank_name
+#                 manual_number = acc.mapped_manual.account_number
+#                 mapped_status = "Yes"
+
+#         row_data = [
+#             acc.account_title or "Operating Account",
+#             period_str,
+#             acc.bank_name,
+#             acc.account_number,
+#             manual_name,
+#             manual_number,
+#             mapped_status,
+#             acc.beginning_balance,
+#             acc.total_deposits,
+#             acc.total_payments,
+#             acc.ending_balance,
+#             acc.total_interbank_deposits,
+#             acc.total_interbank_payments,
+#             acc.net_deposits,
+#             acc.net_payments
+#         ]
+
+#         # Add to combined totals
+#         totals['deposits'] += to_decimal(acc.total_deposits)
+#         totals['payments'] += to_decimal(acc.total_payments)
+#         totals['ib_deposits'] += to_decimal(acc.total_interbank_deposits)
+#         totals['ib_payments'] += to_decimal(acc.total_interbank_payments)
+#         totals['net_deposits'] += to_decimal(acc.net_deposits)
+#         totals['net_payments'] += to_decimal(acc.net_payments)
+#         totals['beginning_balance'] += to_decimal(acc.beginning_balance)
+#         totals['ending_balance'] += to_decimal(acc.ending_balance)
+
+#         for col_idx, val in enumerate(row_data, start=1):
+#             cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
+#             cell.font = font_body
+#             cell.border = border_all
+            
+#             # Format numbers vs text
+#             if col_idx in (1, 2, 3, 4, 5, 6, 7):
+#                 cell.alignment = align_left
+#             else:
+#                 cell.alignment = align_right
+#                 cell.number_format = num_format_currency
+
+#             # Zebra stripe
+#             if idx % 2 == 1:
+#                 cell.fill = fill_zebra
+        
+#         ws_summary.row_dimensions[current_row].height = 20
+#         current_row += 1
+
+#     # Add Totals Row
+#     ws_summary.cell(row=current_row, column=1, value="Combined Total").font = font_total
+#     ws_summary.cell(row=current_row, column=1).alignment = align_left
+#     ws_summary.cell(row=current_row, column=1).border = double_bottom
+#     ws_summary.cell(row=current_row, column=1).fill = fill_total
+    
+#     for col_idx in range(2, 8):
+#         cell_blank = ws_summary.cell(row=current_row, column=col_idx, value="")
+#         cell_blank.border = double_bottom
+#         cell_blank.fill = fill_total
+
+#     total_keys = [
+#         'beginning_balance', 'deposits', 'payments', 'ending_balance', 
+#         'ib_deposits', 'ib_payments', 'net_deposits', 'net_payments'
+#     ]
+#     for idx, key in enumerate(total_keys, start=8):
+#         cell = ws_summary.cell(row=current_row, column=idx, value=totals[key])
+#         cell.font = font_total
+#         cell.alignment = align_right
+#         cell.number_format = num_format_currency
+#         cell.border = double_bottom
+#         cell.fill = fill_total
+
+#     ws_summary.row_dimensions[current_row].height = 22
+
+#     # Add Source Statement Reconciliation under totals
+#     current_row += 2 # Leave 2 empty rows after Combined Totals
+
+#     for acc in bank_accounts:
+#         txs = list(acc.transactions.all().order_by('date', 'id'))
+#         beginning_balance = to_decimal(acc.beginning_balance)
+#         ending_balance = to_decimal(acc.ending_balance)
+
+#         calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
+#         diff = abs(calculated_ending - ending_balance)
+#         recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
+        
+#         period_str = format_period(acc.start_date, acc.end_date)
+        
+#         # Write reconciliation metrics block
+#         ws_summary.cell(row=current_row, column=1, value="Source Statement").font = font_total
+#         ws_summary.cell(row=current_row, column=2, value=sanitize_str(f"{acc.bank_name} — {period_str}")).font = font_body
+#         current_row += 1
+        
+#         ws_summary.cell(row=current_row, column=1, value="Beginning Balance").font = font_total
+#         cell_beg = ws_summary.cell(row=current_row, column=2, value=beginning_balance)
+#         cell_beg.font = font_body
+#         cell_beg.number_format = num_format_currency
+#         cell_beg.alignment = align_right
+#         current_row += 1
+        
+#         ws_summary.cell(row=current_row, column=1, value="Ending Balance").font = font_total
+#         cell_end = ws_summary.cell(row=current_row, column=2, value=ending_balance)
+#         cell_end.font = font_body
+#         cell_end.number_format = num_format_currency
+#         cell_end.alignment = align_right
+#         current_row += 1
+        
+#         ws_summary.cell(row=current_row, column=1, value="Statement Debits").font = font_total
+#         cell_deb = ws_summary.cell(row=current_row, column=2, value=acc.total_payments)
+#         cell_deb.font = font_body
+#         cell_deb.number_format = num_format_currency
+#         cell_deb.alignment = align_right
+#         current_row += 1
+        
+#         ws_summary.cell(row=current_row, column=1, value="Statement Credits").font = font_total
+#         cell_cred = ws_summary.cell(row=current_row, column=2, value=acc.total_deposits)
+#         cell_cred.font = font_body
+#         cell_cred.number_format = num_format_currency
+#         cell_cred.alignment = align_right
+#         current_row += 1
+
+#         cb = cleared_breakdown(acc, txs)
+#         if cb:
+#             for label, value in [
+#                 ("Cleared Transactions Total", cb['cleared']),
+#                 ("Cleared Balance", cb['cleared_balance']),
+#                 ("Uncleared Transactions Total", cb['uncleared']),
+#                 ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
+#                 ("New Transactions Total (after period end)", cb['new']),
+#             ]:
+#                 ws_summary.cell(row=current_row, column=1, value=label).font = font_total
+#                 c = ws_summary.cell(row=current_row, column=2, value=value)
+#                 c.font = font_body
+#                 c.number_format = num_format_currency
+#                 c.alignment = align_right
+#                 current_row += 1
+        
+#         recon_text = f"{recon_status} — Beginning + Credits - Debits = Ending"
+#         ws_summary.cell(row=current_row, column=1, value="Reconciliation Check").font = font_total
+#         ws_summary.cell(row=current_row, column=2, value=recon_text).font = font_total
+#         if recon_status == "PASS":
+#             ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
+#         else:
+#             ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
+            
+#         current_row += 2 # gap
+
+#     # ==================== BUILD UPLOADED STATEMENTS SUMMARY ====================
+#     project = bank_accounts[0].project
+#     uploads = list(project.uploads.all().order_by('uploaded_at'))
+#     if uploads:
+#         ws_summary.cell(row=current_row, column=1, value="Individual Uploaded Statements").font = font_total
+#         current_row += 1
+        
+#         upload_headers = ["Filename", "Upload Date", "Status", "Total Deposits", "Total Payments"]
+#         for col_idx, header in enumerate(upload_headers, start=1):
+#             cell = ws_summary.cell(row=current_row, column=col_idx, value=header)
+#             cell.font = font_header
+#             cell.fill = fill_header_summary
+#             cell.alignment = align_center
+#             cell.border = border_all
+#         current_row += 1
+        
+#         for idx, upload in enumerate(uploads):
+#             row_data = [
+#                 upload.filename(),
+#                 upload.uploaded_at.strftime("%Y-%m-%d %H:%M"),
+#                 upload.status,
+#                 upload.total_deposits,
+#                 upload.total_payments
+#             ]
+#             for col_idx, val in enumerate(row_data, start=1):
+#                 cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
+#                 cell.font = font_body
+#                 cell.border = border_all
+#                 if col_idx in (1, 2, 3):
+#                     cell.alignment = align_left
+#                 else:
+#                     cell.alignment = align_right
+#                     cell.number_format = num_format_currency
+#                 if idx % 2 == 1:
+#                     cell.fill = fill_zebra
+#             current_row += 1
+#         current_row += 2
+
+#     # ==================== BUILD TRANSACTION LEDGER ====================
+    
+#     account_summaries = []
+#     for acc in bank_accounts:
+#         title = acc.account_title or "Operating"
+#         # Simplify title for the ledger summary (e.g., just first word or remove "Account")
+#         title_simple = title.replace(" Account", "").strip()
+#         account_summaries.append(sanitize_str(f"{acc.account_number} {title_simple}"))
+        
+#     accounts_str = ", ".join(account_summaries)
+    
+#     ws_ledger["A1"] = sanitize_str("Standardized Transaction Details")
+#     ws_ledger["A1"].font = font_title
+#     ws_ledger["A2"] = sanitize_str(f"Combined granular transaction logs across all {primary_bank} accounts ({accounts_str}) — {company_name}")
+#     ws_ledger["A2"].font = font_subtitle
+
+#     ledger_headers = [
+#         "Date", "Bank Name", "Account Number", "Account Title", "Statement Ref", "Description",
+#         "Debit/Credit", "Amount", "Category", "Interbank Self-Transfer?", "Cleared Status"
+#     ]
+    
+#     for col_idx, header in enumerate(ledger_headers, start=1):
+#         cell = ws_ledger.cell(row=4, column=col_idx, value=header)
+#         cell.font = font_header
+#         cell.fill = fill_header_ledger
+#         cell.alignment = align_center
+#         cell.border = border_all
+#     ws_ledger.row_dimensions[4].height = 28
+
+#     current_ledger_row = 5
+    
+#     all_txs = []
+#     for acc in bank_accounts:
+#         for tx in acc.transactions.all():
+#             all_txs.append(tx)
+    
+#     all_txs.sort(key=lambda x: x.date, reverse=True)
+
+#     for idx, tx in enumerate(all_txs):
+#         # Format statement ref dynamically, e.g. "9625 - Jan 2026"
+#         month_abbr = tx.date.strftime('%b')
+#         stmt_ref = f"{tx.account.account_number} - {month_abbr} {tx.date.year}"
+        
+#         debit_credit = "Credit" if (tx.amount is not None and tx.amount >= 0) else "Debit"
+
+#         row_data = [
+#             tx.date.strftime("%Y-%m-%d"),
+#             tx.account.bank_name,
+#             tx.account.account_number,
+#             tx.account.account_title or "Operating Account",
+#             stmt_ref,
+#             tx.description,
+#             debit_credit,
+#             tx.amount,
+#             tx.category,
+#             "Yes" if tx.is_interbank else "No",
+#             (tx.cleared_status or "-").capitalize()
+#         ]
+
+#         for col_idx, val in enumerate(row_data, start=1):
+#             cell = ws_ledger.cell(row=current_ledger_row, column=col_idx, value=sanitize_str(val))
+#             cell.font = font_body
+#             cell.border = border_all
+
+#             if col_idx in (1, 10, 11):
+#                 cell.alignment = align_center
+#             elif col_idx == 7:
+#                 cell.alignment = align_center
+#                 if debit_credit == "Credit":
+#                     cell.font = font_credit_bold
+#                 else:
+#                     cell.font = font_debit_bold
+#             elif col_idx in (2, 3, 4, 5, 6, 9):
+#                 cell.alignment = align_left
+#             elif col_idx == 8:
+#                 cell.alignment = align_right
+#                 cell.number_format = num_format_signed_currency
+#                 if tx.amount is not None:
+#                     if tx.amount >= 0:
+#                         cell.font = font_credit
+#                     else:
+#                         cell.font = font_debit
+
+#             if tx.is_interbank:
+#                 cell.fill = fill_interbank
+#                 if col_idx == 10:
+#                     cell.font = font_total
+#             else:
+#                 if idx % 2 == 1:
+#                     cell.fill = fill_zebra
+                    
+#         ws_ledger.row_dimensions[current_ledger_row].height = 20
+#         current_ledger_row += 1
+
+#     # ==================== BUILD INDIVIDUAL ACCOUNT SHEETS ====================
+#     for idx, acc in enumerate(bank_accounts):
+#         short_bank = "".join(c for c in acc.bank_name if c.isalnum() or c.isspace()).strip()
+#         short_bank = short_bank.split()[0] if short_bank else "Bank"
+        
+#         # Make sheet title unique by appending start date or an index
+#         date_suffix = acc.start_date.strftime('%b%y') if acc.start_date else str(idx)
+#         acct_num_str = acc.account_number or ""
+#         sheet_title = f"{short_bank}_{acct_num_str[-4:]}_{date_suffix}"
+#         sheet_title = sanitize_str(re.sub(r'[\\/*?:\[\]]', '', sheet_title))[:30]
+        
+#         # openpyxl will automatically append '1', '2' if there is still a conflict,
+#         # but it's cleaner to handle it manually.
+#         base_title = sheet_title
+#         counter = 1
+#         while base_title in wb.sheetnames:
+#             base_title = f"{sheet_title[:26]}_{counter}"
+#             counter += 1
+#         sheet_title = base_title
+        
+#         ws_acc = wb.create_sheet(title=sheet_title)
+#         ws_acc.views.sheetView[0].showGridLines = True
+        
+#         txs = list(acc.transactions.all().order_by('date', 'id'))
+#         beginning_balance = to_decimal(acc.beginning_balance)
+#         ending_balance = to_decimal(acc.ending_balance)
+
+#         calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
+#         diff = abs(calculated_ending - ending_balance)
+#         recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
+        
+#         period_str = format_statement_dates(acc.start_date, acc.end_date)
+        
+#         card_data = [
+#             ("Account", acc.account_number),
+#             ("Account Title", acc.account_title or "Operating Account"),
+#             ("Statement Period", period_str),
+#             ("Transactions in Ledger", len(txs)),
+#             ("Statement Total Credits", acc.total_deposits),
+#             ("FDD Ledger Total Deposits", acc.total_deposits),
+#             ("Statement Total Debits", acc.total_payments),
+#             ("FDD Ledger Total Payments", acc.total_payments),
+#             ("Statement Beginning Balance", beginning_balance),
+#             ("Statement Ending Balance", ending_balance),
+#             ("Calculated Ending Balance", calculated_ending),
+#             ("Reconciliation", recon_status)
+#         ]
+
+#         cb = cleared_breakdown(acc, txs)
+#         if cb:
+#             card_data[-1:-1] = [
+#                 ("Cleared Transactions Total", cb['cleared']),
+#                 ("Cleared Balance", cb['cleared_balance']),
+#                 ("Uncleared Transactions Total", cb['uncleared']),
+#                 ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
+#                 ("New Transactions Total", cb['new']),
+#             ]
+        
+#         # Headers for Individual Sheet
+#         cell_h1 = ws_acc.cell(row=1, column=1, value="Bank Statement")
+#         cell_h1.font = font_header
+#         cell_h1.fill = fill_header_summary
+#         cell_h1.alignment = align_left
+#         cell_h1.border = border_all
+        
+#         cell_h2 = ws_acc.cell(row=1, column=2, value=sanitize_str(acc.bank_name))
+#         cell_h2.font = font_header
+#         cell_h2.fill = fill_header_summary
+#         cell_h2.alignment = align_left
+#         cell_h2.border = border_all
+        
+#         for idx, (label, val) in enumerate(card_data, start=2):
+#             cell_lbl = ws_acc.cell(row=idx, column=1, value=label)
+#             cell_lbl.font = font_total
+#             cell_lbl.alignment = align_left
+#             cell_lbl.border = border_all
+            
+#             cell_val = ws_acc.cell(row=idx, column=2, value=sanitize_str(val))
+#             cell_val.font = font_body
+#             cell_val.border = border_all
+            
+#             if isinstance(val, (int, Decimal, float)):
+#                 if label == "Transactions in Ledger":
+#                     cell_val.alignment = align_right
+#                     cell_val.number_format = '#,##0'
+#                 else:
+#                     cell_val.alignment = align_right
+#                     cell_val.number_format = num_format_currency
+#             else:
+#                 cell_val.alignment = align_left
+#                 if label == "Reconciliation":
+#                     cell_val.font = font_total
+#                     if val == "PASS":
+#                         cell_val.font = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
+#                     else:
+#                         cell_val.font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
+
+#         # Autofit columns for individual account sheet
+#         for col in ws_acc.columns:
+#             max_len = 0
+#             col_letter = get_column_letter(col[0].column)
+#             for cell in col:
+#                 if cell.value is not None:
+#                     val_str = str(cell.value)
+#                     if isinstance(cell.value, (float, int, Decimal)):
+#                         val_str = f"{cell.value:,.2f}"
+#                     max_len = max(max_len, len(val_str))
+#             ws_acc.column_dimensions[col_letter].width = max(max_len + 3, 15)
+
+#     # ---- Autofit Column Widths (Summary and Ledger) ----
+#     for ws in (ws_summary, ws_ledger):
+#         for col in ws.columns:
+#             max_len = 0
+#             col_letter = get_column_letter(col[0].column)
+            
+#             # Skip Title Block evaluation (first 3 rows) to prevent oversized columns
+#             for cell in col[3:]:
+#                 if cell.value is not None:
+#                     val_str = str(cell.value)
+#                     if isinstance(cell.value, (float, int, Decimal)):
+#                         val_str = f"{cell.value:,.2f}"
+#                     max_len = max(max_len, len(val_str))
+            
+#             header_val = col[3].value
+#             max_len = max(max_len, len(str(header_val or '')) + 3)
+#             min_w = 28 if col_letter == 'A' else 14
+#             ws.column_dimensions[col_letter].width = min(max(max_len, min_w), 50)
+
+#     wb.save(output_path)
+
+
+
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -6,10 +601,14 @@ import re
 from datetime import datetime
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
+from .recon import reconcile_three_step
+
+
 def sanitize_str(val):
     if isinstance(val, str):
         return ILLEGAL_CHARACTERS_RE.sub('', val)
     return val
+
 
 def to_decimal(val):
     if val is None:
@@ -21,40 +620,22 @@ def to_decimal(val):
     except Exception:
         return Decimal('0.00')
 
-def cleared_breakdown(acc, txs):
-    """Returns None for normal statements (no cleared info), else a dict of
-    cleared / uncleared / new totals and the running balances."""
-    if not any(getattr(t, 'cleared_status', None) for t in txs):
-        return None
-    def tot(status):
-        return sum((to_decimal(t.amount) for t in txs if t.cleared_status == status), Decimal('0.00'))
-    cleared, uncleared, new = tot('cleared'), tot('uncleared'), tot('new')
-    beg = to_decimal(acc.beginning_balance)
-    return {
-        'cleared': cleared,
-        'uncleared': uncleared,
-        'new': new,
-        'cleared_balance': beg + cleared,                      # Beginning + cleared rows
-        'register_balance': beg + cleared + uncleared,         # + uncleared rows
-        'ending_balance': beg + cleared + uncleared + new,     # + new rows
-    }
 
 def format_period(start_date, end_date):
     if not start_date or not end_date:
         return "Unknown"
     start_str = start_date.strftime("%b %d")
     if start_date.year == end_date.year:
-        if start_date.month == end_date.month:
-            return f"{start_str} - {end_date.strftime('%b %d')}, {start_date.year}"
-        else:
-            return f"{start_str} - {end_date.strftime('%b %d')}, {start_date.year}"
+        return f"{start_str} - {end_date.strftime('%b %d')}, {start_date.year}"
     else:
         return f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
+
 
 def format_statement_dates(start_date, end_date):
     if not start_date or not end_date:
         return "Statement Dates Unknown"
     return f"Statement Dates {start_date.strftime('%m/%d/%y')} thru {end_date.strftime('%m/%d/%y')}"
+
 
 def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     """
@@ -62,6 +643,10 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     1. Executive Summary
     2. Transaction Ledger
     3. Individual Account Tabs
+
+    Reconciliation:
+      - Normal statements:      Beginning + Credits - Debits = Ending
+      - Reconciliation reports: 3-step logic (cleared -> register -> ending)
     """
     wb = openpyxl.Workbook()
     # Remove default sheet
@@ -88,11 +673,11 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     fill_header_ledger = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     fill_zebra = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     fill_total = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
-    fill_interbank = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid") # light yellow
+    fill_interbank = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # light yellow
 
     thin_border_side = Side(style='thin', color='D9D9D9')
     border_all = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
-    
+
     double_bottom = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
 
     align_center = Alignment(horizontal="center", vertical="center")
@@ -106,6 +691,21 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     font_debit = Font(name="Segoe UI", size=11, color="C00000")
     font_credit_bold = Font(name="Segoe UI", size=11, bold=True, color="1E6E52")
     font_debit_bold = Font(name="Segoe UI", size=11, bold=True, color="C00000")
+
+    font_pass = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
+    font_fail = Font(name="Segoe UI", size=11, bold=True, color="C62828")
+    font_unverified = Font(name="Segoe UI", size=11, bold=True, color="7F7F7F")
+
+    def write_line(ws, row, label, value, is_number=True, font=None):
+        """Writes a 'label | value' pair in columns A and B."""
+        ws.cell(row=row, column=1, value=label).font = font_total
+        c = ws.cell(row=row, column=2, value=sanitize_str(value))
+        c.font = font or font_body
+        if is_number:
+            c.number_format = num_format_currency
+            c.alignment = align_right
+        else:
+            c.alignment = align_left
 
     company_name = "Kwik Goal LTD"
     if bank_accounts and bank_accounts[0].account_holder:
@@ -121,13 +721,13 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
 
     # Table Headers starting at row 4
     summary_headers = [
-        "Account", "Time Period", "Bank Name", "Account Number", 
+        "Account", "Time Period", "Bank Name", "Account Number",
         "Manually Entered Account Name", "Manually Entered Account Number", "Mapped",
         "Beginning Balance", "Total Deposits", "Total Payments", "Ending Balance",
         "Total Interbank Deposits", "Total Interbank Payments",
         "Net Deposits", "Net Payments"
     ]
-    
+
     for col_idx, header in enumerate(summary_headers, start=1):
         cell = ws_summary.cell(row=4, column=col_idx, value=header)
         cell.font = font_header
@@ -167,7 +767,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     # Populating summary rows
     for idx, acc in enumerate(all_summary_accounts):
         period_str = format_period(acc.start_date, acc.end_date)
-        
+
         manual_name = "-"
         manual_number = "-"
         mapped_status = "No"
@@ -215,7 +815,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell = ws_summary.cell(row=current_row, column=col_idx, value=sanitize_str(val))
             cell.font = font_body
             cell.border = border_all
-            
+
             # Format numbers vs text
             if col_idx in (1, 2, 3, 4, 5, 6, 7):
                 cell.alignment = align_left
@@ -226,7 +826,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             # Zebra stripe
             if idx % 2 == 1:
                 cell.fill = fill_zebra
-        
+
         ws_summary.row_dimensions[current_row].height = 20
         current_row += 1
 
@@ -235,14 +835,14 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     ws_summary.cell(row=current_row, column=1).alignment = align_left
     ws_summary.cell(row=current_row, column=1).border = double_bottom
     ws_summary.cell(row=current_row, column=1).fill = fill_total
-    
+
     for col_idx in range(2, 8):
         cell_blank = ws_summary.cell(row=current_row, column=col_idx, value="")
         cell_blank.border = double_bottom
         cell_blank.fill = fill_total
 
     total_keys = [
-        'beginning_balance', 'deposits', 'payments', 'ending_balance', 
+        'beginning_balance', 'deposits', 'payments', 'ending_balance',
         'ib_deposits', 'ib_payments', 'net_deposits', 'net_payments'
     ]
     for idx, key in enumerate(total_keys, start=8):
@@ -256,85 +856,81 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     ws_summary.row_dimensions[current_row].height = 22
 
     # Add Source Statement Reconciliation under totals
-    current_row += 2 # Leave 2 empty rows after Combined Totals
+    current_row += 2  # Leave 2 empty rows after Combined Totals
 
     for acc in bank_accounts:
         txs = list(acc.transactions.all().order_by('date', 'id'))
         beginning_balance = to_decimal(acc.beginning_balance)
         ending_balance = to_decimal(acc.ending_balance)
-
-        calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
-        diff = abs(calculated_ending - ending_balance)
-        recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
-        
         period_str = format_period(acc.start_date, acc.end_date)
-        
-        # Write reconciliation metrics block
-        ws_summary.cell(row=current_row, column=1, value="Source Statement").font = font_total
-        ws_summary.cell(row=current_row, column=2, value=sanitize_str(f"{acc.bank_name} — {period_str}")).font = font_body
+        rec = reconcile_three_step(acc, txs)
+
+        write_line(ws_summary, current_row, "Source Statement",
+                   f"{acc.bank_name} — {period_str}", is_number=False)
         current_row += 1
-        
-        ws_summary.cell(row=current_row, column=1, value="Beginning Balance").font = font_total
-        cell_beg = ws_summary.cell(row=current_row, column=2, value=beginning_balance)
-        cell_beg.font = font_body
-        cell_beg.number_format = num_format_currency
-        cell_beg.alignment = align_right
+        write_line(ws_summary, current_row, "Beginning Balance", beginning_balance)
         current_row += 1
-        
-        ws_summary.cell(row=current_row, column=1, value="Ending Balance").font = font_total
-        cell_end = ws_summary.cell(row=current_row, column=2, value=ending_balance)
-        cell_end.font = font_body
-        cell_end.number_format = num_format_currency
-        cell_end.alignment = align_right
-        current_row += 1
-        
-        ws_summary.cell(row=current_row, column=1, value="Statement Debits").font = font_total
-        cell_deb = ws_summary.cell(row=current_row, column=2, value=acc.total_payments)
-        cell_deb.font = font_body
-        cell_deb.number_format = num_format_currency
-        cell_deb.alignment = align_right
-        current_row += 1
-        
-        ws_summary.cell(row=current_row, column=1, value="Statement Credits").font = font_total
-        cell_cred = ws_summary.cell(row=current_row, column=2, value=acc.total_deposits)
-        cell_cred.font = font_body
-        cell_cred.number_format = num_format_currency
-        cell_cred.alignment = align_right
+        write_line(ws_summary, current_row, "Ending Balance", ending_balance)
         current_row += 1
 
-        cb = cleared_breakdown(acc, txs)
-        if cb:
-            for label, value in [
-                ("Cleared Transactions Total", cb['cleared']),
-                ("Cleared Balance", cb['cleared_balance']),
-                ("Uncleared Transactions Total", cb['uncleared']),
-                ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
-                ("New Transactions Total (after period end)", cb['new']),
-            ]:
-                ws_summary.cell(row=current_row, column=1, value=label).font = font_total
-                c = ws_summary.cell(row=current_row, column=2, value=value)
-                c.font = font_body
-                c.number_format = num_format_currency
-                c.alignment = align_right
+        if rec:
+            # ---- Reconciliation report: 3-step logic ----
+            c_dep, c_wd = rec['cleared']
+            u_dep, u_wd = rec['uncleared']
+            n_dep, n_wd = rec['new']
+            lines = [
+                ("Cleared Deposits and Credits", c_dep),
+                ("Cleared Checks and Payments", c_wd),
+                ("Total Cleared Transactions", c_dep - c_wd),
+                ("Uncleared Deposits and Credits", u_dep),
+                ("Uncleared Checks and Payments", u_wd),
+                ("Total Uncleared Transactions", u_dep - u_wd),
+                ("New Deposits and Credits", n_dep),
+                ("New Checks and Payments", n_wd),
+                ("Total New Transactions", n_dep - n_wd),
+            ]
+            for label, val in lines:
+                write_line(ws_summary, current_row, label, val)
                 current_row += 1
-        
-        recon_text = f"{recon_status} — Beginning + Credits - Debits = Ending"
-        ws_summary.cell(row=current_row, column=1, value="Reconciliation Check").font = font_total
-        ws_summary.cell(row=current_row, column=2, value=recon_text).font = font_total
-        if recon_status == "PASS":
-            ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
+
+            for s in rec['steps']:
+                if s['ok'] is None:
+                    status, f = "NOT VERIFIED", font_unverified
+                elif s['ok']:
+                    status, f = "PASS", font_pass
+                else:
+                    status, f = "FAIL", font_fail
+                printed = "n/a" if s['reported'] is None else f"{to_decimal(s['reported']):,.2f}"
+                write_line(ws_summary, current_row, s['label'],
+                           f"{status} — calculated {s['calc']:,.2f} vs printed {printed}",
+                           is_number=False, font=f)
+                current_row += 1
+
+            if rec['unclassified']:
+                write_line(ws_summary, current_row, "Rows without cleared status",
+                           rec['unclassified'], is_number=False)
+                current_row += 1
+            overall = "PASS" if rec['passed'] else "FAIL"
         else:
-            ws_summary.cell(row=current_row, column=2).font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
-            
-        current_row += 2 # gap
+            # ---- Normal statement: Beginning + Credits - Debits = Ending ----
+            write_line(ws_summary, current_row, "Statement Debits", acc.total_payments)
+            current_row += 1
+            write_line(ws_summary, current_row, "Statement Credits", acc.total_deposits)
+            current_row += 1
+            calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
+            overall = "PASS" if abs(calculated_ending - ending_balance) <= Decimal('0.05') else "FAIL"
+
+        write_line(ws_summary, current_row, "Reconciliation Check", overall,
+                   is_number=False, font=font_pass if overall == "PASS" else font_fail)
+        current_row += 2  # gap
 
     # ==================== BUILD UPLOADED STATEMENTS SUMMARY ====================
-    project = bank_accounts[0].project
-    uploads = list(project.uploads.all().order_by('uploaded_at'))
+    project = bank_accounts[0].project if bank_accounts else None
+    uploads = list(project.uploads.all().order_by('uploaded_at')) if project else []
     if uploads:
         ws_summary.cell(row=current_row, column=1, value="Individual Uploaded Statements").font = font_total
         current_row += 1
-        
+
         upload_headers = ["Filename", "Upload Date", "Status", "Total Deposits", "Total Payments"]
         for col_idx, header in enumerate(upload_headers, start=1):
             cell = ws_summary.cell(row=current_row, column=col_idx, value=header)
@@ -343,7 +939,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             cell.alignment = align_center
             cell.border = border_all
         current_row += 1
-        
+
         for idx, upload in enumerate(uploads):
             row_data = [
                 upload.filename(),
@@ -367,16 +963,16 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         current_row += 2
 
     # ==================== BUILD TRANSACTION LEDGER ====================
-    
+
     account_summaries = []
     for acc in bank_accounts:
         title = acc.account_title or "Operating"
         # Simplify title for the ledger summary (e.g., just first word or remove "Account")
         title_simple = title.replace(" Account", "").strip()
         account_summaries.append(sanitize_str(f"{acc.account_number} {title_simple}"))
-        
+
     accounts_str = ", ".join(account_summaries)
-    
+
     ws_ledger["A1"] = sanitize_str("Standardized Transaction Details")
     ws_ledger["A1"].font = font_title
     ws_ledger["A2"] = sanitize_str(f"Combined granular transaction logs across all {primary_bank} accounts ({accounts_str}) — {company_name}")
@@ -386,7 +982,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         "Date", "Bank Name", "Account Number", "Account Title", "Statement Ref", "Description",
         "Debit/Credit", "Amount", "Category", "Interbank Self-Transfer?", "Cleared Status"
     ]
-    
+
     for col_idx, header in enumerate(ledger_headers, start=1):
         cell = ws_ledger.cell(row=4, column=col_idx, value=header)
         cell.font = font_header
@@ -396,19 +992,19 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     ws_ledger.row_dimensions[4].height = 28
 
     current_ledger_row = 5
-    
+
     all_txs = []
     for acc in bank_accounts:
         for tx in acc.transactions.all():
             all_txs.append(tx)
-    
+
     all_txs.sort(key=lambda x: x.date, reverse=True)
 
     for idx, tx in enumerate(all_txs):
         # Format statement ref dynamically, e.g. "9625 - Jan 2026"
         month_abbr = tx.date.strftime('%b')
         stmt_ref = f"{tx.account.account_number} - {month_abbr} {tx.date.year}"
-        
+
         debit_credit = "Credit" if (tx.amount is not None and tx.amount >= 0) else "Debit"
 
         row_data = [
@@ -456,7 +1052,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             else:
                 if idx % 2 == 1:
                     cell.fill = fill_zebra
-                    
+
         ws_ledger.row_dimensions[current_ledger_row].height = 20
         current_ledger_row += 1
 
@@ -464,35 +1060,37 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
     for idx, acc in enumerate(bank_accounts):
         short_bank = "".join(c for c in acc.bank_name if c.isalnum() or c.isspace()).strip()
         short_bank = short_bank.split()[0] if short_bank else "Bank"
-        
+
         # Make sheet title unique by appending start date or an index
         date_suffix = acc.start_date.strftime('%b%y') if acc.start_date else str(idx)
         acct_num_str = acc.account_number or ""
         sheet_title = f"{short_bank}_{acct_num_str[-4:]}_{date_suffix}"
         sheet_title = sanitize_str(re.sub(r'[\\/*?:\[\]]', '', sheet_title))[:30]
-        
-        # openpyxl will automatically append '1', '2' if there is still a conflict,
-        # but it's cleaner to handle it manually.
+
         base_title = sheet_title
         counter = 1
         while base_title in wb.sheetnames:
             base_title = f"{sheet_title[:26]}_{counter}"
             counter += 1
         sheet_title = base_title
-        
+
         ws_acc = wb.create_sheet(title=sheet_title)
         ws_acc.views.sheetView[0].showGridLines = True
-        
+
         txs = list(acc.transactions.all().order_by('date', 'id'))
         beginning_balance = to_decimal(acc.beginning_balance)
         ending_balance = to_decimal(acc.ending_balance)
 
-        calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
-        diff = abs(calculated_ending - ending_balance)
-        recon_status = "PASS" if diff <= Decimal('0.05') else "FAIL"
-        
+        rec = reconcile_three_step(acc, txs)
+        if rec:
+            calculated_ending = rec['steps'][2]['calc']
+            recon_status = "PASS" if rec['passed'] else "FAIL"
+        else:
+            calculated_ending = beginning_balance + to_decimal(acc.total_deposits) - to_decimal(acc.total_payments)
+            recon_status = "PASS" if abs(calculated_ending - ending_balance) <= Decimal('0.05') else "FAIL"
+
         period_str = format_statement_dates(acc.start_date, acc.end_date)
-        
+
         card_data = [
             ("Account", acc.account_number),
             ("Account Title", acc.account_title or "Operating Account"),
@@ -508,39 +1106,43 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             ("Reconciliation", recon_status)
         ]
 
-        cb = cleared_breakdown(acc, txs)
-        if cb:
-            card_data[-1:-1] = [
-                ("Cleared Transactions Total", cb['cleared']),
-                ("Cleared Balance", cb['cleared_balance']),
-                ("Uncleared Transactions Total", cb['uncleared']),
-                ("Register Balance (Cleared + Uncleared)", cb['register_balance']),
-                ("New Transactions Total", cb['new']),
+        if rec:
+            c_dep, c_wd = rec['cleared']
+            u_dep, u_wd = rec['uncleared']
+            n_dep, n_wd = rec['new']
+            extra = [
+                ("Cleared Deposits and Credits", c_dep),
+                ("Cleared Checks and Payments", c_wd),
+                ("Uncleared Deposits and Credits", u_dep),
+                ("Uncleared Checks and Payments", u_wd),
+                ("New Deposits and Credits", n_dep),
+                ("New Checks and Payments", n_wd),
             ]
-        
+            card_data[-1:-1] = extra  # inserts just before the final "Reconciliation" row
+
         # Headers for Individual Sheet
         cell_h1 = ws_acc.cell(row=1, column=1, value="Bank Statement")
         cell_h1.font = font_header
         cell_h1.fill = fill_header_summary
         cell_h1.alignment = align_left
         cell_h1.border = border_all
-        
+
         cell_h2 = ws_acc.cell(row=1, column=2, value=sanitize_str(acc.bank_name))
         cell_h2.font = font_header
         cell_h2.fill = fill_header_summary
         cell_h2.alignment = align_left
         cell_h2.border = border_all
-        
-        for idx, (label, val) in enumerate(card_data, start=2):
-            cell_lbl = ws_acc.cell(row=idx, column=1, value=label)
+
+        for row_i, (label, val) in enumerate(card_data, start=2):
+            cell_lbl = ws_acc.cell(row=row_i, column=1, value=label)
             cell_lbl.font = font_total
             cell_lbl.alignment = align_left
             cell_lbl.border = border_all
-            
-            cell_val = ws_acc.cell(row=idx, column=2, value=sanitize_str(val))
+
+            cell_val = ws_acc.cell(row=row_i, column=2, value=sanitize_str(val))
             cell_val.font = font_body
             cell_val.border = border_all
-            
+
             if isinstance(val, (int, Decimal, float)):
                 if label == "Transactions in Ledger":
                     cell_val.alignment = align_right
@@ -551,11 +1153,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
             else:
                 cell_val.alignment = align_left
                 if label == "Reconciliation":
-                    cell_val.font = font_total
-                    if val == "PASS":
-                        cell_val.font = Font(name="Segoe UI", size=11, bold=True, color="2E7D32")
-                    else:
-                        cell_val.font = Font(name="Segoe UI", size=11, bold=True, color="C62828")
+                    cell_val.font = font_pass if val == "PASS" else font_fail
 
         # Autofit columns for individual account sheet
         for col in ws_acc.columns:
@@ -574,7 +1172,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
         for col in ws.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)
-            
+
             # Skip Title Block evaluation (first 3 rows) to prevent oversized columns
             for cell in col[3:]:
                 if cell.value is not None:
@@ -582,7 +1180,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
                     if isinstance(cell.value, (float, int, Decimal)):
                         val_str = f"{cell.value:,.2f}"
                     max_len = max(max_len, len(val_str))
-            
+
             header_val = col[3].value
             max_len = max(max_len, len(str(header_val or '')) + 3)
             min_w = 28 if col_letter == 'A' else 14
