@@ -900,9 +900,7 @@ def generate_excel_report(bank_accounts, output_path, manual_accounts=None):
                     status, f = "PASS", font_pass
                 else:
                     status, f = "FAIL", font_fail
-                printed = "n/a" if s['reported'] is None else f"{to_decimal(s['reported']):,.2f}"
-                write_line(ws_summary, current_row, s['label'],
-                           f"{status} — calculated {s['calc']:,.2f} vs printed {printed}",
+                write_line(ws_summary, current_row, s['label'], status,
                            is_number=False, font=f)
                 current_row += 1
 

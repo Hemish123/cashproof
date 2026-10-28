@@ -447,6 +447,9 @@ class ExcelReportGenerationTests(TestCase):
             cleared_status="uncleared"
         )
 
+        self.upload.source_type = "RECONCILIATION"
+        self.upload.save()
+
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
             tmp_path = tmp.name
 
@@ -463,6 +466,8 @@ class ExcelReportGenerationTests(TestCase):
             self.assertIn("Total Uncleared Transactions", summary_values)
             self.assertNotIn("Cleared extracted rows vs printed totals", summary_values)
             self.assertNotIn("Extraction Check (transaction rows)", summary_values)
+            self.assertIn("PASS", summary_values)
+            self.assertFalse(any("calculated" in str(v).lower() for v in summary_values if isinstance(v, str)))
 
             # Check individual account sheet
             acc_sheet = [s for s in wb.sheetnames if s not in ("Executive Summary", "Transaction Details")][0]

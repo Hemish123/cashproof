@@ -90,6 +90,11 @@ def reconcile_three_step(acc, txs):
     The group figures (deposits / payments) come from the PRINTED 'Total ...' lines of the
     report whenever they were extracted (acc.recon_totals). The extracted rows are only used
     to cross-check them (or as a fallback when a printed total is missing)."""
+
+    upload = getattr(acc, 'upload', None)
+    if upload is not None and getattr(upload, 'source_type', 'RECONCILIATION') != 'RECONCILIATION':
+        return None
+    
     if not any(getattr(t, 'cleared_status', None) for t in txs):
         return None
 
